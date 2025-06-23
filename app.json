@@ -1,0 +1,41 @@
+{
+  "expo": {
+    "name": "UltraStore",
+    "slug": "UntraStore",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "https://lh3.googleusercontent.com/fife/ALs6j_Hed2OPo-gVAAInhCjl-_o1ZiVrWhMtyHMmoN9iVmeQ-SJjzwi-L8VVlFUVQpR-MDlG4mcetNa7F9pAAxAy-vXIa0jQAXOSHEAD22vjuxQZR54ptgCx_NvKBz4_8WJJ2el2OxrfYmC4hOzG4H6g1UnR_ObSg_wFN9WJCzpPsdrs-gvf1gwGEnacUtS4znAoqbQl30d9nEJiBnCvnV9zsOiOHfIKfRK9k7GnLp8UZBvZ4QwJtm_RT41nS_60XHhJ2zrHe2-NuntpsG9hhs6F-4yH2_j1qLUbXg1whOlTtMuc0nvZshJJI_yTgMHMYYrsO1mZCpXX-7nqxGcDw5rfLrsJuHF3Z_q41OfFEJu6XcjwW6eI3Xaf2dxDKE6ozrtZ-DpC8thuIwNFlwbWQ9T7jfVLwaFM2ErYmT9Tl3Z6neB5BOjzJeeB8dzJsKvTZQ-rUaVY9UmMubXqRK0Y4uq0TEAtqOANIZtNYdyiONOJBVdNQLrSTAHK_hQgOXCW8sZsWPVX3rpVHbPoh6smRO9KtWOY23Xl_TGXDV5bBk97rFCQZRvPxZWooye8VoqspRaJ0F7m03rzPcYGafx6ZoUfLHrBaNELjACBkwPbjdFoYfkxHr8Jr6ji_9TyiRWyKjLP3iZQHPzQiNS6BAwmCwRxsVBGm9miU6rHmH78EuZmvRHlkwIkfwXmO4GokuP1vC_pBDv6kuVo6OO_OVHB_hBRBMbIWwPvy9W0xQQ46rMgAdvZeHWEk9WrBuP5Tnj2-YxCKUZ9H1DhXKhQxg_3-BLl2kiERkmLOcLYUh1p67K0g2Au2B_UJCpbTy4lD4c942EHiSOU9E0KgNq0XGW3U42MXEpk-GNUgWcfMEUm2u9CafBdPkRYuB633ZAKIDNa8DpcH3gCZXVKiq-wwiUG4Nb__A1c_rmHe5thdBcGbIA9TtRjyQNSbhNcG_LapNQu8Fdkc9OzLvFDj_DFpOh4RqjQu6WO_x9pxe8DfDfgeGl4xoQ6ouyrpZACgxYEdEk5al6LutK97aDt2fRUHkMbjdRX4tvAhnBaz0YmASagWA4zPFqLpLq__u6C90TX8qDwyqh6pO-ACDu4hA87O5cX8yNb_Wt3AKUoF2WBEUwQXvINGP0IC756YXBJ747nNusO8SxvAtuRlZNhLwr_KC9RkWG7bAmEMUZCYn0qDML967JOdiDmduQbUj9iH31rIYlU6RUp2p7fknkKT4S_TItlilK4_YvF_Txv6S4HyQTr1aVcgAIE1ngWVCzZvNcwHkXjwcfwLpyM4R9Uh3MNve_bwzTizqIYIuir0MaA0DGWSWOPpZlXh-KySbXFlSOFSz20UKf_7KpAyFz75aPtsJQBTqsWNeF6YzTFLpWPEe9bQgFw0LmEnL8o-QNRQGYpgqB7XiDXgacCW3UipaliGsp8t7iqeLwYMLY01H3s24Psfxk1YRzuCtSA7GFsujP9Mzybn0h8pVsGx8wmcb7bwqSdFYGwXpBcezgZMtYicFHE_iyXOgOzqlaQ1GJpJKWS_m4TsWK0G2Q0X50TbI4qXRD7ns3KhbrSO47AwCVXonGc1i6qXH-beBPiOyWafhNsqmhL0YK-V6blaXytEf4EgGiX0Fbu6bFt6J33eQpik7STB2aCfpUSKxx2Sk8VBkeG_GymMUHKioclmsiKc6_rOC3iO5JbUyJEiIimquw-acceL0Gku-MIgS2jxit-bswqSdud=w1919-h910?auditContext=forDisplay",
+    "scheme": "myapp",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "Allow $(PRODUCT_NAME) to access your camera",
+        "NSMicrophoneUsageDescription": "Allow $(PRODUCT_NAME) to access your microphone"
+      }
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single",
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-barcode-scanner",
+      "expo-secure-store"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "android": {
+      "permissions": [
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT",
+        "android.permission.CAMERA"
+      ],
+      "package": "com.enanguyen.boltexponativewind"
+    },
+    "owner": "enanguyen"
+  }
+}
