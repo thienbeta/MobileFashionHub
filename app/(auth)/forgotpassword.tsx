@@ -1,14 +1,14 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/theme';
 import { Appearance } from 'react-native';
 import { colors } from '../style/themeColors';
 import axios from 'axios';
-import * as FileSystem from 'expo-file-system';
+import * as Notifications from 'expo-notifications';
 
-const API_BASE_URL = 'http://172.23.144.1:5261/api/XacThuc';
+const API_BASE_URL = 'http://192.168.43.163:5261/api/XacThuc';
 
 export default function ForgotPasswordScreen() {
   const router = useRouter();
@@ -20,13 +20,26 @@ export default function ForgotPasswordScreen() {
   const [otp, setOtp] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [step, setStep] = useState('email');
   const [isLoading, setIsLoading] = useState(false);
 
-  // Hàm validateEmail với kiểu dữ liệu rõ ràng cho tham số email
   const validateEmail = (email: string) => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     return emailRegex.test(email);
+  };
+
+  const requestNotificationPermissions = async () => {
+    const { status } = await Notifications.getPermissionsAsync();
+    if (status !== 'granted') {
+      const { status: newStatus } = await Notifications.requestPermissionsAsync();
+      if (newStatus !== 'granted') {
+        Alert.alert('Lỗi', 'Không thể hiển thị thông báo');
+        return false;
+      }
+    }
+    return true;
   };
 
   const handleSendOtp = async () => {
@@ -80,10 +93,20 @@ export default function ForgotPasswordScreen() {
     try {
       const response = await axios.post(`${API_BASE_URL}/reset-password`, { email, otp, newPassword });
       if (response.status === 200) {
-        Alert.alert('Thành công', 'Đặt lại mật khẩu thành công');
-        const userData = { email, password: newPassword };
-        await FileSystem.writeAsStringAsync(FileSystem.documentDirectory + 'user.json', JSON.stringify(userData));
-        router.push('/(auth)/login');
+        const hasPermission = await requestNotificationPermissions();
+        if (hasPermission) {
+          await Notifications.scheduleNotificationAsync({
+            content: {
+              title: "Mật khẩu đã được cập nhật",
+              body: "Mật khẩu của bạn đã được cập nhật thành công.",
+              data: { someData: "goes here" },
+            },
+            trigger: null,
+          });
+        }
+        Alert.alert('Thành công', 'Đặt lại mật khẩu thành công', [
+          { text: 'OK', onPress: () => router.push('/(auth)/login') }
+        ]);
       }
     } catch (error) {
       Alert.alert('Lỗi', 'Có lỗi xảy ra, vui lòng thử lại');
@@ -140,30 +163,36 @@ export default function ForgotPasswordScreen() {
           <View style={[styles.inputContainer, { backgroundColor: themeColors.secondaryBackground, borderColor: themeColors.border }]}>
             <Ionicons name="lock-closed-outline" size={24} color={themeColors.iconPrimary} style={styles.icon} />
             <TextInput
-              style={[styles.input, { color: themeColors.textPrimary }]}
+              style={[styles.input, { color: themeColors.textPrimary, flex: 1 }]}
               placeholder="Mật khẩu mới"
               placeholderTextColor={themeColors.textSecondary}
-              secureTextEntry
+              secureTextEntry={!showNewPassword}
               value={newPassword}
               onChangeText={setNewPassword}
             />
+            <TouchableOpacity onPress={() => setShowNewPassword(!showNewPassword)} style={styles.eyeIcon}>
+              <Ionicons name={showNewPassword ? 'eye-off' : 'eye'} size={24} color={themeColors.iconPrimary} />
+            </TouchableOpacity>
           </View>
           <View style={[styles.inputContainer, { backgroundColor: themeColors.secondaryBackground, borderColor: themeColors.border }]}>
             <Ionicons name="lock-closed-outline" size={24} color={themeColors.iconPrimary} style={styles.icon} />
             <TextInput
-              style={[styles.input, { color: themeColors.textPrimary }]}
+              style={[styles.input, { color: themeColors.textPrimary, flex: 1 }]}
               placeholder="Xác nhận mật khẩu"
               placeholderTextColor={themeColors.textSecondary}
-              secureTextEntry
+              secureTextEntry={!showConfirmPassword}
               value={confirmPassword}
               onChangeText={setConfirmPassword}
             />
+            <TouchableOpacity onPress={() => setShowConfirmPassword(!showConfirmPassword)} style={styles.eyeIcon}>
+              <Ionicons name={showConfirmPassword ? 'eye-off' : 'eye'} size={24} color={themeColors.iconPrimary} />
+            </TouchableOpacity>
           </View>
         </>
       )}
 
       <TouchableOpacity
-        style={[styles.button, { backgroundColor: themeColors.logoutButton }]}
+        style={[styles.button, { backgroundColor: themeColors.primary }]}
         onPress={() => {
           if (step === 'email') handleSendOtp();
           else if (step === 'otp') handleVerifyOtp();
@@ -171,9 +200,21 @@ export default function ForgotPasswordScreen() {
         }}
         disabled={isLoading}
       >
-        <Text style={[styles.buttonText, { color: themeColors.logoutText }]}>
-          {isLoading ? 'Đang xử lý...' : step === 'email' ? 'Gửi mã OTP' : step === 'otp' ? 'Xác nhận OTP' : 'Đặt lại mật khẩu'}
-        </Text>
+        <View style={styles.buttonContent}>
+          {isLoading ? (
+            <ActivityIndicator size="small" color={themeColors.textOnPrimary} style={styles.buttonIcon} />
+          ) : (
+            <Ionicons
+              name={step === 'email' ? 'mail-outline' : step === 'otp' ? 'key-outline' : 'lock-closed-outline'}
+              size={24}
+              color={themeColors.textOnPrimary}
+              style={styles.buttonIcon}
+            />
+          )}
+          <Text style={[styles.buttonText, { color: themeColors.textOnPrimary }]}>
+            {isLoading ? 'Đang xử lý...' : step === 'email' ? 'Gửi mã OTP' : step === 'otp' ? 'Xác nhận OTP' : 'Đặt lại mật khẩu'}
+          </Text>
+        </View>
       </TouchableOpacity>
 
       <TouchableOpacity onPress={() => router.push('/(auth)/login')}>
@@ -220,11 +261,22 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: 'Poppins_400Regular',
   },
+  eyeIcon: {
+    padding: 8,
+  },
   button: {
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
     marginVertical: 24,
+  },
+  buttonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  buttonIcon: {
+    marginRight: 8,
   },
   buttonText: {
     fontSize: 16,

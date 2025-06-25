@@ -94,7 +94,7 @@ export default function CombosScreen() {
     const fetchCombos = async () => {
       try {
         setIsLoading(true);
-        const data = await apiFetch('http://172.23.144.1:5261/api/Combo/ComboSanPhamView', 'Combos');
+        const data = await apiFetch('http://192.168.43.163:5261/api/Combo/ComboSanPhamView', 'Combos');
 
         const mappedCombos = data.map((combo: any) => ({
           maCombo: combo.maCombo,

@@ -3,11 +3,18 @@ import { View, Text, StyleSheet, Image, ScrollView, TouchableOpacity, TextInput,
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useTheme } from '../../context/theme';
 import { Appearance } from 'react-native';
-import { ArrowLeft, Heart, ShoppingBag, Star, Trash2 } from 'lucide-react-native';
+import { ArrowLeft, Heart, ShoppingBag, Star, Trash2, Send } from 'lucide-react-native';
 import { colors } from '../../style/themeColors';
 import * as FileSystem from 'expo-file-system';
 import { apiFetch } from '../../../src/utils/api';
-import axios, { AxiosError } from 'axios';
+import axios from 'axios';
+
+interface NguoiDung {
+  maNguoiDung: string;
+  hoTen: string;
+  vaiTro: string;
+  hinhAnh: string | null;
+}
 
 interface ProductFromAPI {
   id: string;
@@ -32,6 +39,7 @@ interface Comment {
   danhGia: number;
   ngayBinhLuan: string;
   trangThai: number;
+  hinhAnh: string | null;
 }
 
 interface Product {
@@ -50,7 +58,7 @@ interface Product {
   rating: number;
 }
 
-const API_BASE_URL = 'http://172.23.144.1:5261/api';
+const API_BASE_URL = 'http://192.168.43.163:5261/api';
 
 export default function ProductDetailScreen() {
   const { id } = useLocalSearchParams();
@@ -71,7 +79,7 @@ export default function ProductDetailScreen() {
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState('');
   const [rating, setRating] = useState(0);
-  const [userData, setUserData] = useState<any>(null);
+  const [userData, setUserData] = useState<NguoiDung | null>(null);
   const [authToken, setAuthToken] = useState<string | null>(null);
 
   useEffect(() => {
@@ -140,6 +148,13 @@ export default function ProductDetailScreen() {
 
         let enrichedComments = productComments;
         if (userData?.maNguoiDung && authToken) {
+          const nguoiDungData = await apiFetch(`${API_BASE_URL}/NguoiDung/${userData.maNguoiDung}`, 'User');
+          enrichedComments = productComments.map((comment: Comment) => ({
+            ...comment,
+            hoTen: comment.maNguoiDung === userData.maNguoiDung ? userData?.hoTen : comment.hoTen,
+            hinhAnh: comment.maNguoiDung === userData.maNguoiDung ? nguoiDungData.hinhAnh : comment.hinhAnh,
+          }));
+
           const yeuThichData = await apiFetch(`${API_BASE_URL}/YeuThich`, 'Favorites');
           const userFavorite = yeuThichData.find(
             (yeuThich: any) => yeuThich.maSanPham === baseProductId && yeuThich.maNguoiDung === userData.maNguoiDung
@@ -148,11 +163,6 @@ export default function ProductDetailScreen() {
             setIsLiked(true);
             setLikedId(userFavorite.maYeuThich);
           }
-
-          enrichedComments = productComments.map((comment: Comment) => ({
-            ...comment,
-            hoTen: comment.maNguoiDung === userData.maNguoiDung ? userData?.hoTen : comment.maNguoiDung,
-          }));
         }
 
         const totalRating = enrichedComments.reduce((sum: number, comment: Comment) => sum + comment.danhGia, 0);
@@ -244,9 +254,14 @@ export default function ProductDetailScreen() {
       }
 
       if (!userDataFromFile || !token) {
-        Alert.alert('Lỗi', 'Vui lòng đăng nhập để thêm sản phẩm vào giỏ hàng!', [
-          { text: 'OK', onPress: () => router.push('/(auth)/login') },
-        ]);
+        Alert.alert(
+          'Lỗi',
+          'Vui lòng đăng nhập để thêm sản phẩm vào giỏ hàng!',
+          [
+            { text: 'OK', onPress: () => router.push('/(auth)/login') },
+          ]
+        );
+
         return;
       }
 
@@ -290,7 +305,6 @@ export default function ProductDetailScreen() {
       Alert.alert('Thành công', 'Đã thêm vào giỏ hàng thành công!');
     } catch (err) {
       console.error('Error in handleAddToCart:', err);
-
       if (axios.isAxiosError(err)) {
         const errorMessage = err.response?.data?.message || 'Có lỗi xảy ra khi thêm vào giỏ hàng!';
         if (err.response?.status === 401) {
@@ -304,7 +318,6 @@ export default function ProductDetailScreen() {
         Alert.alert('Lỗi', 'Đã có lỗi không xác định xảy ra!');
       }
     }
-
   };
 
   const handleAddComment = async () => {
@@ -335,6 +348,7 @@ export default function ProductDetailScreen() {
         danhGia: rating,
         ngayBinhLuan: new Date().toISOString(),
         trangThai: 0,
+        hinhAnh: userData?.hinhAnh,
       };
 
       await apiFetch(`${API_BASE_URL}/Comment/add`, 'AddComment', {
@@ -449,7 +463,6 @@ export default function ProductDetailScreen() {
       </View>
 
       <View style={styles.content}>
-        <Text style={[styles.category, { color: themeColors.textSecondary }]}>{currentProduct.productType}</Text>
         <Text style={[styles.name, { color: themeColors.textPrimary }]}>{currentProduct.name}</Text>
         <View style={styles.ratingContainer}>
           {Array.from({ length: 5 }).map((_, index) => (
@@ -557,7 +570,7 @@ export default function ProductDetailScreen() {
           <Text style={styles.addToCartText}>Thêm vào giỏ hàng</Text>
         </TouchableOpacity>
 
-        <Text style={[styles.sectionTitle, { color: themeColors.textPrimary }]}>Bình luận & Đánh giá</Text>
+        <Text style={[styles.sectionTitle, { color: themeColors.textPrimary, fontSize: 24 }]}>Đánh giá sản phẩm</Text>
         <View style={styles.commentForm}>
           <View style={styles.ratingInput}>
             {Array.from({ length: 5 }).map((_, index) => (
@@ -570,51 +583,69 @@ export default function ProductDetailScreen() {
               </TouchableOpacity>
             ))}
           </View>
-          <TextInput
-            style={[styles.commentInput, { borderColor: themeColors.textTertiary, color: themeColors.textPrimary }]}
-            placeholder="Nhập bình luận của bạn..."
-            placeholderTextColor={themeColors.textTertiary}
-            value={newComment}
-            onChangeText={setNewComment}
-            multiline
-          />
-          <TouchableOpacity style={styles.submitButton} onPress={handleAddComment}>
-            <Text style={styles.submitButtonText}>Gửi</Text>
-          </TouchableOpacity>
+          <View style={[styles.inputWrapper, { borderColor: themeColors.textTertiary }]}>
+            <TextInput
+              style={[styles.commentInput, { color: themeColors.textPrimary }]}
+              placeholder="Nhập đánh giá của bạn..."
+              placeholderTextColor={themeColors.textTertiary}
+              value={newComment}
+              onChangeText={setNewComment}
+              multiline
+            />
+            <TouchableOpacity style={styles.submitIcon} onPress={handleAddComment}>
+              <Send size={20} color={themeColors.iconPrimary} />
+            </TouchableOpacity>
+          </View>
         </View>
 
         <View style={styles.commentsContainer}>
           {comments.length === 0 ? (
             <Text style={[styles.noComments, { color: themeColors.textTertiary }]}>
-              Chưa có bình luận nào.
+              Chưa có đánh giá nào.
             </Text>
           ) : (
             comments.map(comment => (
-              <View key={comment.maBinhLuan} style={styles.comment}>
-                <View style={styles.commentContent}>
-                  <View style={styles.ratingContainer}>
-                    {Array.from({ length: 5 }).map((_, index) => (
-                      <Star
-                        key={index}
-                        size={16}
-                        color={index < comment.danhGia ? '#facc15' : '#d1d5db'}
-                        fill={index < comment.danhGia ? '#facc15' : 'none'}
+              <View key={comment.maBinhLuan} style={[styles.comment, { backgroundColor: themeColors.secondaryBackground }]}>
+                <View style={styles.commentHeader}>
+                  <View style={styles.commentAuthorContainer}>
+                    {comment.hinhAnh ? (
+                      <Image
+                        source={{ uri: `data:image/jpeg;base64,${comment.hinhAnh}` }}
+                        style={styles.commentAvatar}
                       />
-                    ))}
+                    ) : (
+                      <View style={[styles.commentAvatar, styles.placeholderAvatar]}>
+                        <Text style={styles.placeholderText}>
+                          {comment.hoTen?.charAt(0).toUpperCase() || '?'}
+                        </Text>
+                      </View>
+                    )}
+                    <Text style={[styles.commentAuthor, { color: themeColors.textPrimary }]}>
+                      {comment.hoTen}
+                    </Text>
                   </View>
-                  <Text style={[styles.commentText, { color: themeColors.textPrimary }]}>
-                    {comment.noiDungBinhLuan}
-                  </Text>
-                  <Text style={[styles.commentAuthor, { color: themeColors.textSecondary }]}>
-                    {comment.hoTen || comment.maNguoiDung} -{' '}
+                  {comment.maNguoiDung === currentUserId && (
+                    <TouchableOpacity onPress={() => handleDeleteComment(comment.maBinhLuan)}>
+                      <Trash2 size={20} color="#ef4444" />
+                    </TouchableOpacity>
+                  )}
+                </View>
+                <View style={styles.ratingContainer}>
+                  {Array.from({ length: 5 }).map((_, index) => (
+                    <Star
+                      key={index}
+                      size={16}
+                      color={index < comment.danhGia ? '#facc15' : '#d1d5db'}
+                      fill={index < comment.danhGia ? '#facc15' : 'none'}
+                    />
+                  ))}
+                  <Text style={[styles.commentDate, { color: themeColors.textSecondary }]}>
                     {new Date(comment.ngayBinhLuan).toLocaleDateString()}
                   </Text>
                 </View>
-                {comment.maNguoiDung === currentUserId && (
-                  <TouchableOpacity onPress={() => handleDeleteComment(comment.maBinhLuan)}>
-                    <Trash2 size={20} color="#ef4444" />
-                  </TouchableOpacity>
-                )}
+                <Text style={[styles.commentText, { color: themeColors.textPrimary }]}>
+                  {comment.noiDungBinhLuan}
+                </Text>
               </View>
             ))
           )}
@@ -778,49 +809,70 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     marginBottom: 12,
   },
-  commentInput: {
-    borderWidth: 1,
-    borderRadius: 8,
-    padding: 12,
-    minHeight: 100,
-    marginBottom: 12,
-    fontFamily: 'Poppins_400Regular',
-    fontSize: 14,
-  },
-  submitButton: {
-    backgroundColor: '#3b82f6',
-    padding: 12,
-    borderRadius: 8,
+  inputWrapper: {
+    flexDirection: 'row',
     alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
   },
-  submitButtonText: {
-    color: '#fff',
+  commentInput: {
+    flex: 1,
     fontSize: 16,
-    fontFamily: 'Poppins_600SemiBold',
+    fontFamily: 'Poppins_400Regular',
+    minHeight: 100,
+    textAlignVertical: 'top',
+  },
+  submitIcon: {
+    marginLeft: 8,
   },
   commentsContainer: {
     marginBottom: 24,
   },
   comment: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    backgroundColor: '#f3f4f6',
     padding: 12,
-    borderRadius: 8,
+    borderRadius: 12,
     marginBottom: 12,
   },
-  commentContent: {
-    flex: 1,
-    marginRight: 12,
+  commentHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  commentAuthorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  commentAvatar: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    marginRight: 8,
+  },
+  placeholderAvatar: {
+    backgroundColor: '#A0AEC0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  placeholderText: {
+    color: '#fff',
+    fontSize: 12,
+    fontFamily: 'Poppins_600SemiBold',
+  },
+  commentAuthor: {
+    fontSize: 14,
+    fontFamily: 'Poppins_600SemiBold',
+  },
+  commentDate: {
+    fontSize: 12,
+    fontFamily: 'Poppins_400Regular',
+    marginLeft: 8,
   },
   commentText: {
     fontSize: 14,
     fontFamily: 'Poppins_400Regular',
-    marginBottom: 4,
-  },
-  commentAuthor: {
-    fontSize: 12,
-    fontFamily: 'Poppins_400Regular',
+    lineHeight: 20,
   },
   noComments: {
     fontSize: 14,

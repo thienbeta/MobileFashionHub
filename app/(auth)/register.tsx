@@ -1,13 +1,22 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/theme';
 import { Appearance } from 'react-native';
 import { colors } from '../style/themeColors';
 import axios from 'axios';
+import * as Notifications from 'expo-notifications';
 
-const API_BASE_URL = 'http://172.23.144.1:5261/api/NguoiDung';
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
+
+const API_BASE_URL = 'http://192.168.43.163:5261/api/NguoiDung';
 
 export default function RegisterScreen() {
   const router = useRouter();
@@ -21,6 +30,19 @@ export default function RegisterScreen() {
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+
+  const requestNotificationPermissions = async () => {
+    const { status } = await Notifications.getPermissionsAsync();
+    if (status !== 'granted') {
+      const { status: newStatus } = await Notifications.requestPermissionsAsync();
+      if (newStatus !== 'granted') {
+        Alert.alert('Lỗi', 'Không thể hiển thị thông báo');
+        return false;
+      }
+    }
+    return true;
+  };
+
   const handleRegister = async () => {
     if (!fullName || !username || !email || !password) {
       Alert.alert('Lỗi', 'Vui lòng điền đầy đủ các trường');
@@ -41,6 +63,17 @@ export default function RegisterScreen() {
 
       if (response.status === 201) {
         Alert.alert('Thành công', 'Đăng ký thành công');
+        const hasPermission = await requestNotificationPermissions();
+        if (hasPermission) {
+          await Notifications.scheduleNotificationAsync({
+            content: {
+              title: "Đăng ký thành công",
+              body: "Chúc mừng! Bạn đã đăng ký thành công.",
+              data: { someData: "goes here" },
+            },
+            trigger: null,
+          });
+        }
         router.push('/(auth)/login');
       } else {
         Alert.alert('Lỗi', 'Đăng ký thất bại');
@@ -103,7 +136,6 @@ export default function RegisterScreen() {
         ]}
       >
         <Ionicons name="lock-closed-outline" size={24} color={themeColors.iconPrimary} style={styles.icon} />
-
         <TextInput
           style={[styles.input, { color: themeColors.textPrimary, flex: 1 }]}
           placeholder="Mật khẩu"
@@ -113,7 +145,6 @@ export default function RegisterScreen() {
           value={password}
           onChangeText={setPassword}
         />
-
         <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeIcon}>
           <Ionicons
             name={showPassword ? 'eye-off-outline' : 'eye-outline'}
@@ -124,13 +155,20 @@ export default function RegisterScreen() {
       </View>
 
       <TouchableOpacity
-        style={[styles.button, { backgroundColor: themeColors.logoutButton }]}
+        style={[styles.button, { backgroundColor: themeColors.primary }]}
         onPress={handleRegister}
         disabled={isLoading}
       >
-        <Text style={[styles.buttonText, { color: themeColors.logoutText }]}>
-          {isLoading ? 'Đang đăng ký...' : 'Đăng ký'}
-        </Text>
+        <View style={styles.buttonContent}>
+          {isLoading ? (
+            <ActivityIndicator size="small" color={themeColors.textOnPrimary} style={styles.buttonIcon} />
+          ) : (
+            <Ionicons name="person-add-outline" size={24} color={themeColors.textOnPrimary} style={styles.buttonIcon} />
+          )}
+          <Text style={[styles.buttonText, { color: themeColors.textOnPrimary }]}>
+            {isLoading ? 'Đang đăng ký...' : 'Đăng ký'}
+          </Text>
+        </View>
       </TouchableOpacity>
 
       <TouchableOpacity onPress={() => router.push('/(auth)/login')}>
@@ -179,6 +217,14 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
     marginVertical: 24,
+  },
+  buttonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  buttonIcon: {
+    marginRight: 8,
   },
   buttonText: {
     fontSize: 16,

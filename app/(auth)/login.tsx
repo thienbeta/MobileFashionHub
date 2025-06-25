@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/theme';
@@ -7,8 +7,17 @@ import { Appearance } from 'react-native';
 import { colors } from '../style/themeColors';
 import axios from 'axios';
 import * as FileSystem from 'expo-file-system';
+import * as Notifications from 'expo-notifications';
 
-const API_BASE_URL = 'http://172.23.144.1:5261/api/XacThuc';
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
+
+const API_BASE_URL = 'http://192.168.43.163:5261/api/XacThuc';
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -39,6 +48,18 @@ export default function LoginScreen() {
     loadSavedData();
   }, []);
 
+  const requestNotificationPermissions = async () => {
+    const { status } = await Notifications.getPermissionsAsync();
+    if (status !== 'granted') {
+      const { status: newStatus } = await Notifications.requestPermissionsAsync();
+      if (newStatus !== 'granted') {
+        Alert.alert('Lỗi', 'Không thể hiển thị thông báo');
+        return false;
+      }
+    }
+    return true;
+  };
+
   const handleLogin = async () => {
     setIsLoading(true);
     try {
@@ -58,6 +79,17 @@ export default function LoginScreen() {
         const userData = { taiKhoan, password, token, user };
         await FileSystem.writeAsStringAsync(FileSystem.documentDirectory + 'user.json', JSON.stringify(userData));
         Alert.alert('Thành công', 'Đăng nhập thành công');
+        const hasPermission = await requestNotificationPermissions();
+        if (hasPermission) {
+          await Notifications.scheduleNotificationAsync({
+            content: {
+              title: "Đăng nhập thành công",
+              body: "Chào mừng bạn đến với ứng dụng!",
+              data: { someData: "goes here" },
+            },
+            trigger: null,
+          });
+        }
         router.push('/(tabs)');
       }
     } catch (error) {
@@ -104,13 +136,20 @@ export default function LoginScreen() {
       </TouchableOpacity>
 
       <TouchableOpacity
-        style={[styles.button, { backgroundColor: themeColors.logoutButton }]}
+        style={[styles.button, { backgroundColor: themeColors.primary }]}
         onPress={handleLogin}
         disabled={isLoading}
       >
-        <Text style={[styles.buttonText, { color: themeColors.logoutText }]}>
-          {isLoading ? 'Đang xử lý...' : 'Đăng nhập'}
-        </Text>
+        <View style={styles.buttonContent}>
+          {isLoading ? (
+            <ActivityIndicator size="small" color={themeColors.textOnPrimary} style={styles.buttonIcon} />
+          ) : (
+            <Ionicons name="log-in-outline" size={24} color={themeColors.textOnPrimary} style={styles.buttonIcon} />
+          )}
+          <Text style={[styles.buttonText, { color: themeColors.textOnPrimary }]}>
+            {isLoading ? 'Đang xử lý...' : 'Đăng nhập'}
+          </Text>
+        </View>
       </TouchableOpacity>
 
       <TouchableOpacity onPress={() => router.push('/(auth)/register')}>
@@ -160,6 +199,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginVertical: 24,
   },
+  buttonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  buttonIcon: {
+    marginRight: 8,
+  },
   buttonText: {
     fontSize: 16,
     fontFamily: 'Poppins_600SemiBold',
@@ -170,7 +217,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Poppins_400Regular',
     marginVertical: 8,
   },
-    linkTextt: {
+  linkTextt: {
     textAlign: 'right',
     fontSize: 16,
     fontFamily: 'Poppins_400Regular',

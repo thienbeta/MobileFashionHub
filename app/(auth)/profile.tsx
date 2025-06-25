@@ -8,8 +8,9 @@ import { Appearance } from 'react-native';
 import { colors } from '../style/themeColors';
 import * as FileSystem from 'expo-file-system';
 import axios from 'axios';
+import * as Notifications from 'expo-notifications';
 
-const API_BASE_URL = 'http://172.23.144.1:5261/api';
+const API_BASE_URL = 'http://192.168.43.163:5261/api';
 
 interface UserData {
   maNguoiDung: string | undefined;
@@ -136,6 +137,18 @@ export default function ProfileScreen() {
     }
   };
 
+  const requestNotificationPermissions = async () => {
+    const { status } = await Notifications.getPermissionsAsync();
+    if (status !== 'granted') {
+      const { status: newStatus } = await Notifications.requestPermissionsAsync();
+      if (newStatus !== 'granted') {
+        Alert.alert('Lỗi', 'Không thể hiển thị thông báo');
+        return false;
+      }
+    }
+    return true;
+  };
+
   const handleSaveChanges = async () => {
     if (!formData.hoTen.trim() || !formData.taiKhoan.trim() || !formData.email.trim()) {
       Alert.alert('Lỗi', 'Vui lòng điền đầy đủ họ tên, tài khoản và email.');
@@ -169,6 +182,17 @@ export default function ProfileScreen() {
       );
 
       if (response.status === 200) {
+        const hasPermission = await requestNotificationPermissions();
+        if (hasPermission) {
+          await Notifications.scheduleNotificationAsync({
+            content: {
+              title: "Cập nhật hồ sơ thành công",
+              body: "Thông tin của bạn đã được cập nhật.",
+              data: { someData: "goes here" },
+            },
+            trigger: null,
+          });
+        }
         Alert.alert('Thành công', 'Cập nhật thông tin thành công.');
         setUserData({
           ...userData!,
@@ -229,6 +253,17 @@ export default function ProfileScreen() {
       );
 
       if (response.status === 200) {
+        const hasPermission = await requestNotificationPermissions();
+        if (hasPermission) {
+          await Notifications.scheduleNotificationAsync({
+            content: {
+              title: "Đổi mật khẩu thành công",
+              body: "Mật khẩu của bạn đã được cập nhật.",
+              data: { someData: "goes here" },
+            },
+            trigger: null,
+          });
+        }
         Alert.alert('Thành công', 'Đổi mật khẩu thành công.');
         setOldPassword('');
         setNewPassword('');
@@ -277,14 +312,14 @@ export default function ProfileScreen() {
           style={[
             styles.tabButton,
             currentTab === 'profile' && styles.activeTab,
-            { backgroundColor: currentTab === 'profile' ? themeColors.logoutButton : themeColors.secondaryBackground },
+            { backgroundColor: currentTab === 'profile' ? themeColors.primary : themeColors.secondaryBackground },
           ]}
           onPress={() => setCurrentTab('profile')}
         >
           <Text
             style={[
               styles.tabText,
-              { color: currentTab === 'profile' ? themeColors.logoutText : themeColors.textPrimary },
+              { color: currentTab === 'profile' ? themeColors.textOnPrimary : themeColors.textPrimary },
             ]}
           >
             Trang cá nhân
@@ -294,14 +329,14 @@ export default function ProfileScreen() {
           style={[
             styles.tabButton,
             currentTab === 'changePassword' && styles.activeTab,
-            { backgroundColor: currentTab === 'changePassword' ? themeColors.logoutButton : themeColors.secondaryBackground },
+            { backgroundColor: currentTab === 'changePassword' ? themeColors.primary : themeColors.secondaryBackground },
           ]}
           onPress={() => setCurrentTab('changePassword')}
         >
           <Text
             style={[
               styles.tabText,
-              { color: currentTab === 'changePassword' ? themeColors.logoutText : themeColors.textPrimary },
+              { color: currentTab === 'changePassword' ? themeColors.textOnPrimary : themeColors.textPrimary },
             ]}
           >
             Đổi mật khẩu
@@ -356,10 +391,13 @@ export default function ProfileScreen() {
             />
           </View>
           <TouchableOpacity
-            style={[styles.button, { backgroundColor: themeColors.logoutButton }]}
+            style={[styles.button, { backgroundColor: themeColors.primary }]}
             onPress={handleSaveChanges}
           >
-            <Text style={[styles.buttonText, { color: themeColors.logoutText }]}>Lưu thay đổi</Text>
+            <View style={styles.buttonContent}>
+              <Ionicons name="save-outline" size={24} color={themeColors.textOnPrimary} style={styles.buttonIcon} />
+              <Text style={[styles.buttonText, { color: themeColors.textOnPrimary }]}>Lưu thay đổi</Text>
+            </View>
           </TouchableOpacity>
         </>
       )}
@@ -412,13 +450,15 @@ export default function ProfileScreen() {
           </View>
 
           <TouchableOpacity
-            style={[styles.button, { backgroundColor: themeColors.logoutButton }]}
+            style={[styles.button, { backgroundColor: themeColors.primary }]}
             onPress={handleChangePassword}
           >
-            <Text style={[styles.buttonText, { color: themeColors.logoutText }]}>Đổi mật khẩu</Text>
+            <View style={styles.buttonContent}>
+              <Ionicons name="key-outline" size={24} color={themeColors.textOnPrimary} style={styles.buttonIcon} />
+              <Text style={[styles.buttonText, { color: themeColors.textOnPrimary }]}>Đổi mật khẩu</Text>
+            </View>
           </TouchableOpacity>
         </>
-
       )}
     </ScrollView>
   );
@@ -479,7 +519,6 @@ const styles = StyleSheet.create({
   eyeIcon: {
     padding: 6,
   },
-
   input: {
     flex: 1,
     height: 48,
@@ -492,6 +531,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginVertical: 24,
     marginHorizontal: 24,
+  },
+  buttonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  buttonIcon: {
+    marginRight: 8,
   },
   buttonText: {
     fontSize: 16,

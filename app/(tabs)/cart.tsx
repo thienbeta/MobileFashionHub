@@ -24,7 +24,7 @@ import * as FileSystem from 'expo-file-system';
 import { apiFetch } from '../../src/utils/api';
 import { KeyboardTypeOptions } from 'react-native';
 
-const API_BASE_URL = 'http://172.23.144.1:5261/api';
+const API_BASE_URL = 'http://192.168.43.163:5261/api';
 const VN_ADDRESS_API = 'https://provinces.open-api.vn/api/';
 
 interface CartItem {

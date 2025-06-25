@@ -1,14 +1,17 @@
-import { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, Switch, ActivityIndicator, Alert, StyleSheet } from 'react-native';
-import { ChevronRight, Bell, Moon, Pencil, ShoppingCart, Ticket, CircleUser, Contact, BookOpenText } from 'lucide-react-native';
+import { useEffect, useState, useCallback } from 'react';
+import { View, Text, TouchableOpacity, Switch, ActivityIndicator, Alert, StyleSheet, ScrollView, RefreshControl, Platform } from 'react-native';
+import { ChevronRight, Bell, Moon, ShoppingCart, Ticket, CircleUser, Contact, BookOpenText } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { useTheme } from '../context/theme';
 import { Appearance } from 'react-native';
 import { colors } from '../style/themeColors';
 import * as FileSystem from 'expo-file-system';
 import axios from 'axios';
+import * as Notifications from 'expo-notifications';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Ionicons } from '@expo/vector-icons';
 
-const API_BASE_URL = 'http://172.23.144.1:5261/api/XacThuc';
+const API_BASE_URL = 'http://192.168.43.163:5261/api/XacThuc';
 
 interface UserData {
   hoTen: string;
@@ -20,61 +23,99 @@ export default function SettingsScreen() {
   const { theme, setTheme } = useTheme();
   const [userData, setUserData] = useState<UserData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [isNotificationsEnabled, setIsNotificationsEnabled] = useState(false);
+
+  const isDarkMode =
+    theme === 'dark' ||
+    (theme === 'system' && (Appearance.getColorScheme() === 'dark' || Appearance.getColorScheme() === null));
+  const themeColors = isDarkMode ? colors.dark : colors.light;
+
+  const loadUserData = useCallback(async () => {
+    try {
+      const fileUri = FileSystem.documentDirectory + 'user.json';
+      const fileInfo = await FileSystem.getInfoAsync(fileUri);
+      if (!fileInfo.exists) {
+        setIsLoading(false);
+        Alert.alert('Lỗi', 'Vui lòng đăng nhập lại', [
+          { text: 'OK', onPress: () => router.replace('/(auth)/login') },
+        ]);
+        return;
+      }
+
+      const fileContent = await FileSystem.readAsStringAsync(fileUri, {
+        encoding: FileSystem.EncodingType.UTF8,
+      });
+      const data = JSON.parse(fileContent);
+      const user = data?.user;
+
+      if (!user?.hoTen || !user?.email) {
+        setIsLoading(false);
+        Alert.alert('Lỗi', 'Không tìm thấy thông tin người dùng. Vui lòng đăng nhập lại.', [
+          { text: 'OK', onPress: () => router.replace('/(auth)/login') },
+        ]);
+        return;
+      }
+
+      setUserData({ hoTen: user.hoTen, email: user.email });
+      setIsLoading(false);
+    } catch (error) {
+      console.error('Lỗi khi đọc user.json:', error);
+      setIsLoading(false);
+      Alert.alert('Lỗi', 'Không thể tải thông tin người dùng. Vui lòng thử lại.', [
+        { text: 'OK', onPress: () => router.replace('/(auth)/login') },
+      ]);
+    }
+  }, [router]);
 
   useEffect(() => {
     let isMounted = true;
 
-    const loadUserData = async () => {
-      try {
-        const fileUri = FileSystem.documentDirectory + 'user.json';
-        const fileInfo = await FileSystem.getInfoAsync(fileUri);
-        if (!fileInfo.exists) {
-          if (isMounted) {
-            setIsLoading(false);
-            Alert.alert('Lỗi', 'Vui lòng đăng nhập lại', [
-              { text: 'OK', onPress: () => router.replace('/(auth)/login') },
-            ]);
+    if (isMounted) {
+      loadUserData();
+      const loadNotificationPreference = async () => {
+        try {
+          const value = await AsyncStorage.getItem('notificationsEnabled');
+          if (value !== null) {
+            setIsNotificationsEnabled(value === 'true');
           }
-          return;
+        } catch (error) {
+          console.error('Lỗi khi tải tùy chọn thông báo:', error);
         }
-
-        const fileContent = await FileSystem.readAsStringAsync(fileUri, {
-          encoding: FileSystem.EncodingType.UTF8,
-        });
-        const data = JSON.parse(fileContent);
-        const user = data?.user;
-
-        if (!user?.hoTen || !user?.email) {
-          if (isMounted) {
-            setIsLoading(false);
-            Alert.alert('Lỗi', 'Không tìm thấy thông tin người dùng. Vui lòng đăng nhập lại.', [
-              { text: 'OK', onPress: () => router.replace('/(auth)/login') },
-            ]);
-          }
-          return;
-        }
-
-        if (isMounted) {
-          setUserData({ hoTen: user.hoTen, email: user.email });
-          setIsLoading(false);
-        }
-      } catch (error) {
-        console.error('Error reading user.json:', error);
-        if (isMounted) {
-          setIsLoading(false);
-          Alert.alert('Lỗi', 'Không thể tải thông tin người dùng. Vui lòng thử lại.', [
-            { text: 'OK', onPress: () => router.replace('/(auth)/login') },
-          ]);
-        }
-      }
-    };
-
-    loadUserData();
+      };
+      loadNotificationPreference();
+    }
 
     return () => {
       isMounted = false;
     };
-  }, [router]);
+  }, [loadUserData]);
+
+  useEffect(() => {
+    Notifications.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldShowAlert: isNotificationsEnabled,
+        shouldPlaySound: isNotificationsEnabled,
+        shouldSetBadge: false,
+      }),
+    });
+  }, [isNotificationsEnabled]);
+
+  useEffect(() => {
+    if (isNotificationsEnabled) {
+      registerForPushNotificationsAsync().then(token => {
+        if (token) {
+          sendPushTokenToBackend(token);
+        }
+      });
+    }
+  }, [isNotificationsEnabled]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadUserData();
+    setRefreshing(false);
+  }, [loadUserData]);
 
   const handleLogout = async () => {
     try {
@@ -107,14 +148,89 @@ export default function SettingsScreen() {
     }
   };
 
-  const isDarkMode =
-    theme === 'dark' ||
-    (theme === 'system' && (Appearance.getColorScheme() === 'dark' || Appearance.getColorScheme() === null));
-  const themeColors = isDarkMode ? colors.dark : colors.light;
-
   const toggleDarkMode = () => {
     setTheme(isDarkMode ? 'light' : 'dark');
   };
+
+  const toggleNotifications = async () => {
+    const newValue = !isNotificationsEnabled;
+    setIsNotificationsEnabled(newValue);
+    try {
+      await AsyncStorage.setItem('notificationsEnabled', newValue.toString());
+    } catch (error) {
+      console.error('Lỗi khi lưu tùy chọn thông báo:', error);
+    }
+    if (newValue) {
+      const token = await registerForPushNotificationsAsync();
+      if (token) {
+        sendPushTokenToBackend(token);
+      }
+    } else {
+      const token = await Notifications.getExpoPushTokenAsync();
+      if (token) {
+        await removePushTokenFromBackend(token.data);
+      }
+    }
+  };
+
+  async function registerForPushNotificationsAsync() {
+    let token;
+    if (Platform.OS === 'android') {
+      await Notifications.setNotificationChannelAsync('default', {
+        name: 'default',
+        importance: Notifications.AndroidImportance.MAX,
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: '#FF231F7C',
+      });
+    }
+
+    const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    let finalStatus = existingStatus;
+    if (existingStatus !== 'granted') {
+      const { status } = await Notifications.requestPermissionsAsync();
+      finalStatus = status;
+    }
+    if (finalStatus !== 'granted') {
+      Alert.alert('Không nhận được mã thông báo đẩy cho thông báo đẩy!');
+      setIsNotificationsEnabled(false);
+      return;
+    }
+    token = (await Notifications.getExpoPushTokenAsync()).data;
+    console.log('Push token:', token);
+    return token;
+  }
+
+  async function sendPushTokenToBackend(token: string) {
+    try {
+      const fileUri = FileSystem.documentDirectory + 'user.json';
+      const fileContent = await FileSystem.readAsStringAsync(fileUri);
+      const data = JSON.parse(fileContent);
+      const userToken = data?.token;
+
+      await axios.post(
+        `${API_BASE_URL}/registerPushToken`,
+        { pushToken: token },
+        { headers: { Authorization: `Bearer ${userToken}` } }
+      );
+    } catch (error) {
+    }
+  }
+
+  async function removePushTokenFromBackend(token: string) {
+    try {
+      const fileUri = FileSystem.documentDirectory + 'user.json';
+      const fileContent = await FileSystem.readAsStringAsync(fileUri);
+      const data = JSON.parse(fileContent);
+      const userToken = data?.token;
+
+      await axios.post(
+        `${API_BASE_URL}/unregisterPushToken`,
+        { pushToken: token },
+        { headers: { Authorization: `Bearer ${userToken}` } }
+      );
+    } catch (error) {
+    }
+  }
 
   if (isLoading) {
     return (
@@ -129,7 +245,17 @@ export default function SettingsScreen() {
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: themeColors.background }]}>
+    <ScrollView
+      style={[styles.container, { backgroundColor: themeColors.background }]}
+      contentContainerStyle={styles.scrollContent}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          tintColor={themeColors.primary}
+        />
+      }
+    >
       <Text style={[styles.title, { color: themeColors.textPrimary }]}>Cài đặt</Text>
 
       <TouchableOpacity
@@ -139,8 +265,8 @@ export default function SettingsScreen() {
         <View style={styles.profileInfo}>
           <CircleUser size={60} color={themeColors.iconPrimary} />
           <View style={styles.profileText}>
-            <Text style={[styles.profileName, { color: themeColors.textPrimary }]}>{userData.hoTen}</Text>
-            <Text style={[styles.profileEmail, { color: themeColors.textSecondary }]}>{userData.email}</Text>
+            <Text style={[styles.profileName, { color: themeColors.textPrimary }]} numberOfLines={1} ellipsizeMode="tail">{userData.hoTen}</Text>
+            <Text style={[styles.profileEmail, { color: themeColors.textSecondary }]} numberOfLines={1} ellipsizeMode="tail">{userData.email}</Text>
           </View>
         </View>
         <ChevronRight size={24} color={themeColors.iconSecondary} />
@@ -158,7 +284,8 @@ export default function SettingsScreen() {
             trackColor={{ false: '#CBD5E0', true: '#9F7AEA' }}
             thumbColor="#fff"
             ios_backgroundColor="#CBD5E0"
-            value={true}
+            value={isNotificationsEnabled}
+            onValueChange={toggleNotifications}
           />
         </View>
 
@@ -219,23 +346,29 @@ export default function SettingsScreen() {
           </View>
           <ChevronRight size={24} color={themeColors.iconSecondary} />
         </TouchableOpacity>
-
       </View>
 
       <TouchableOpacity
         style={[styles.logoutButton, { backgroundColor: themeColors.logoutButton }]}
         onPress={handleLogout}
       >
-        <Text style={[styles.logoutText, { color: themeColors.logoutText }]}>Đăng xuất</Text>
+        <View style={styles.buttonContent}>
+          <Ionicons name="log-out-outline" size={24} color={themeColors.textOnPrimary} style={styles.buttonIcon} />
+          <Text style={[styles.logoutText, { color: themeColors.textOnPrimary }]}>Đăng xuất</Text>
+        </View>
       </TouchableOpacity>
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: colors.light.background,
+  },
+  scrollContent: {
     paddingTop: 48,
+    paddingBottom: 32,
   },
   title: {
     fontSize: 24,
@@ -295,6 +428,14 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 12,
     alignItems: 'center',
+  },
+  buttonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  buttonIcon: {
+    marginRight: 8,
   },
   logoutText: {
     fontSize: 16,

@@ -1,15 +1,34 @@
 import { useState, useEffect } from "react";
-import { View, Text, StyleSheet, Image, ScrollView, TouchableOpacity, Alert } from "react-native";
+import { View, Text, StyleSheet, Image, ScrollView, TouchableOpacity, Alert, TextInput } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useTheme } from "../../context/theme";
 import { Appearance } from "react-native";
-import { ArrowLeft, Heart, ShoppingBag } from "lucide-react-native";
+import { ArrowLeft, Heart, ShoppingBag, Star, Trash2, Send } from "lucide-react-native";
 import { colors } from "../../style/themeColors";
 import * as FileSystem from "expo-file-system";
 import { apiFetch } from "../../../src/utils/api";
 import axios from "axios";
 
-const API_BASE_URL = "http://172.23.144.1:5261/api";
+const API_BASE_URL = "http://192.168.43.163:5261/api";
+
+interface NguoiDung {
+  maNguoiDung: string;
+  hoTen: string;
+  vaiTro: string;
+  hinhAnh: string | null;
+}
+
+interface Comment {
+  maBinhLuan: string;
+  maComBo: number;
+  maNguoiDung: string;
+  hoTen: string;
+  noiDungBinhLuan: string;
+  danhGia: number;
+  ngayBinhLuan: string;
+  trangThai: number;
+  hinhAnh: string | null;
+}
 
 interface ComboProduct {
   idSanPham: string;
@@ -37,6 +56,7 @@ interface Combo {
   moTa: string;
   gia: number;
   soLuong: number;
+  rating: number;
 }
 
 interface SizeQuantity {
@@ -60,8 +80,11 @@ export default function ComboDetail() {
   const [error, setError] = useState<string | null>(null);
   const [isLiked, setIsLiked] = useState(false);
   const [likedId, setLikedId] = useState<string | null>(null);
-  const [userData, setUserData] = useState<any>(null);
+  const [userData, setUserData] = useState<NguoiDung | null>(null);
   const [authToken, setAuthToken] = useState<string | null>(null);
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [newComment, setNewComment] = useState("");
+  const [rating, setRating] = useState(0);
 
   useEffect(() => {
     const loadUserData = async () => {
@@ -75,7 +98,6 @@ export default function ComboDetail() {
           setAuthToken(parsedUserData.token || null);
         }
       } catch (error) {
-        console.error("Error loading user data from FileSystem:", error);
         setError("Không thể tải thông tin người dùng.");
       }
     };
@@ -83,7 +105,7 @@ export default function ComboDetail() {
   }, []);
 
   useEffect(() => {
-    const fetchCombo = async () => {
+    const fetchComboAndComments = async () => {
       try {
         setLoading(true);
         setError(null);
@@ -116,6 +138,7 @@ export default function ComboDetail() {
           moTa: comboResponse[0].moTa || "Không có mô tả",
           gia: comboResponse[0].gia,
           soLuong: comboResponse[0].soLuong,
+          rating: 0,
         };
 
         const initialSelections = formattedCombo.sanPhams.reduce((acc, product) => ({
@@ -130,7 +153,20 @@ export default function ComboDetail() {
           }
         });
 
+        const commentData = await apiFetch(`${API_BASE_URL}/Comment/list`, "Comments");
+        const comboComments = commentData.filter(
+          (comment: Comment) => comment.maComBo === parseInt(id) && comment.trangThai === 1
+        );
+
+        let enrichedComments = comboComments;
         if (userData?.maNguoiDung && authToken) {
+          const nguoiDungData = await apiFetch(`${API_BASE_URL}/NguoiDung/${userData.maNguoiDung}`, "User");
+          enrichedComments = comboComments.map((comment: Comment) => ({
+            ...comment,
+            hoTen: comment.maNguoiDung === userData.maNguoiDung ? userData?.hoTen : comment.hoTen,
+            hinhAnh: comment.maNguoiDung === userData.maNguoiDung ? nguoiDungData.hinhAnh : comment.hinhAnh,
+          }));
+
           const favoriteResponse = await apiFetch(`${API_BASE_URL}/YeuThich`, "Favorites");
           const userFavorite = favoriteResponse.find(
             (favorite: any) => favorite.maCombo === id && favorite.maNguoiDung === userData.maNguoiDung
@@ -141,16 +177,22 @@ export default function ComboDetail() {
           }
         }
 
+        const totalRating = enrichedComments.reduce((sum: number, comment: Comment) => sum + comment.danhGia, 0);
+        const averageRating = enrichedComments.length > 0 ? totalRating / enrichedComments.length : 0;
+        const roundedAverageRating = Number(averageRating.toFixed(1));
+
+        formattedCombo.rating = roundedAverageRating;
+
         setCombo(formattedCombo);
+        setComments(enrichedComments);
       } catch (err) {
-        console.error("Error fetching combo:", err);
         setError((err as Error).message || "Không thể tải chi tiết combo.");
       } finally {
         setLoading(false);
       }
     };
 
-    fetchCombo();
+    fetchComboAndComments();
   }, [id, userData, authToken]);
 
   const fetchSizeQuantities = async (productId: string, color: string) => {
@@ -175,7 +217,6 @@ export default function ComboDetail() {
         [productId]: sizeData,
       }));
     } catch (err) {
-      console.error("Lỗi khi lấy thông tin kích thước:", err);
       setError("Không thể tải thông tin kích thước.");
     }
   };
@@ -210,7 +251,7 @@ export default function ComboDetail() {
       }
 
       if (!id || Array.isArray(id)) {
-        Alert.alert("Lỗi", "ID combo không hợp lệ!", [{ text: "OK", onPress: () => { } }]);
+        Alert.alert("Lỗi", "ID combo không hợp lệ!");
         return;
       }
 
@@ -221,9 +262,7 @@ export default function ComboDetail() {
         });
         setIsLiked(false);
         setLikedId(null);
-        Alert.alert("Thành công", "Đã xóa combo khỏi danh sách yêu thích!", [
-          { text: "OK", onPress: () => { } },
-        ]);
+        Alert.alert("Thành công", "Đã xóa combo khỏi danh sách yêu thích!");
       } else {
         const favoriteData = {
           maCombo: id,
@@ -244,15 +283,10 @@ export default function ComboDetail() {
         });
         setIsLiked(true);
         setLikedId(addedFavorite.maYeuThich);
-        Alert.alert("Thành công", "Đã thêm combo vào danh sách yêu thích!", [
-          { text: "OK", onPress: () => { } },
-        ]);
+        Alert.alert("Thành công", "Đã thêm combo vào danh sách yêu thích!");
       }
     } catch (error) {
-      console.error("Error in handleToggleLike:", error);
-      Alert.alert("Lỗi", "Có lỗi xảy ra khi thao tác với yêu thích!", [
-        { text: "OK", onPress: () => { } },
-      ]);
+      Alert.alert("Lỗi", "Có lỗi xảy ra khi thao tác với yêu thích!");
     }
   };
 
@@ -278,9 +312,7 @@ export default function ComboDetail() {
       }
 
       if (!combo) {
-        Alert.alert("Lỗi", "Dữ liệu combo không hợp lệ!", [
-          { text: "OK", onPress: () => { } },
-        ]);
+        Alert.alert("Lỗi", "Dữ liệu combo không hợp lệ!");
         return;
       }
 
@@ -288,9 +320,7 @@ export default function ComboDetail() {
         (product) => selections[product.idSanPham]?.colorIndex === null || selections[product.idSanPham]?.sizeIndex === null
       );
       if (invalidProducts.length > 0) {
-        Alert.alert("Lỗi", "Vui lòng chọn màu sắc và kích thước cho tất cả sản phẩm trong combo!", [
-          { text: "OK", onPress: () => { } },
-        ]);
+        Alert.alert("Lỗi", "Vui lòng chọn màu sắc và kích thước cho tất cả sản phẩm trong combo!");
         return;
       }
 
@@ -313,7 +343,6 @@ export default function ComboDetail() {
         }),
       };
 
-      console.log("Sending cart data:", JSON.stringify(cartData, null, 2));
       const response = await apiFetch(`${API_BASE_URL}/Cart/ThemComboVaoGioHang`, "AddToCart", {
         method: "POST",
         headers: {
@@ -328,30 +357,116 @@ export default function ComboDetail() {
       } else {
         throw new Error(`Yêu cầu thất bại với mã: ${response?.responseCode || 'unknown'}`);
       }
-
     } catch (err) {
-      console.error("Error in handleAddToCart:", err);
       if (axios.isAxiosError(err)) {
         const errorMessage = err.response?.data?.message || "Có lỗi xảy ra khi thêm vào giỏ hàng!";
         const status = err.response?.status;
-        console.log("API Error:", { status, data: err.response?.data });
         if (status === 401) {
           Alert.alert("Lỗi", "Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại!", [
             { text: "OK", onPress: () => router.push("/(auth)/login") },
           ]);
         } else if (status === 500) {
-          Alert.alert("Lỗi", "Lỗi máy chủ: Vui lòng liên hệ quản trị viên. Chi tiết: " + errorMessage, [
-            { text: "OK", onPress: () => { } },
-          ]);
+          Alert.alert("Lỗi", "Lỗi máy chủ: Vui lòng liên hệ quản trị viên. Chi tiết: " + errorMessage);
         } else {
-          Alert.alert("Lỗi", errorMessage, [{ text: "OK", onPress: () => { } }]);
+          Alert.alert("Lỗi", errorMessage);
         }
       } else {
-        Alert.alert("Lỗi", "Đã có lỗi không xác định xảy ra!", [
-          { text: "OK", onPress: () => { } },
-        ]);
+        Alert.alert("Lỗi", "Đã có lỗi không xác định xảy ra!");
       }
     }
+  };
+
+  const handleAddComment = async () => {
+    try {
+      if (!newComment || rating < 1 || rating > 5) {
+        Alert.alert("Lỗi", "Vui lòng nhập nội dung bình luận và chọn đánh giá từ 1 đến 5 sao!");
+        return;
+      }
+
+      if (!userData?.maNguoiDung || !authToken) {
+        Alert.alert("Lỗi", "Vui lòng đăng nhập trước khi thêm bình luận!", [
+          { text: "OK", onPress: () => router.push("/(auth)/login") },
+        ]);
+        return;
+      }
+
+      if (!id || Array.isArray(id)) {
+        Alert.alert("Lỗi", "ID combo không hợp lệ!");
+        return;
+      }
+
+      const commentData = {
+        maComBo: parseInt(id),
+        tenCombo: combo?.name,
+        maNguoiDung: userData.maNguoiDung,
+        hoTen: userData?.hoTen,
+        noiDungBinhLuan: newComment,
+        danhGia: rating,
+        ngayBinhLuan: new Date().toISOString(),
+        trangThai: 0,
+        hinhAnh: userData?.hinhAnh,
+      };
+
+      await apiFetch(`${API_BASE_URL}/Comment/add`, "AddComment", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify(commentData),
+      });
+
+      setNewComment("");
+      setRating(0);
+      Alert.alert("Thành công", "Bình luận của bạn đã được ghi lại và chờ duyệt!");
+    } catch (err) {
+      Alert.alert("Lỗi", "Có lỗi xảy ra khi thêm bình luận!");
+    }
+  };
+
+  const handleDeleteComment = async (maBinhLuan: string) => {
+    Alert.alert("Xác nhận", "Bạn có chắc muốn xóa bình luận này không?", [
+      { text: "Không", style: "cancel" },
+      {
+        text: "Có",
+        onPress: async () => {
+          try {
+            if (!authToken) {
+              Alert.alert("Lỗi", "Bạn cần đăng nhập để thực hiện chức năng này!", [
+                { text: "OK", onPress: () => router.push("/(auth)/login") },
+              ]);
+              return;
+            }
+
+            await apiFetch(`${API_BASE_URL}/Comment/delete/${maBinhLuan}`, "DeleteComment", {
+              method: "DELETE",
+              headers: { Authorization: `Bearer ${authToken}` },
+            });
+
+            setComments(prev => {
+              const updatedComments = prev.filter(comment => comment.maBinhLuan !== maBinhLuan);
+              const totalRating = updatedComments.reduce((sum, comment) => sum + comment.danhGia, 0);
+              const averageRating = updatedComments.length > 0 ? totalRating / updatedComments.length : 0;
+              const roundedAverageRating = Number(averageRating.toFixed(1));
+
+              if (combo) {
+                setCombo({ ...combo, rating: roundedAverageRating });
+              }
+
+              return updatedComments;
+            });
+
+            Alert.alert("Thành công", "Xóa bình luận thành công!");
+          } catch (err) {
+            Alert.alert("Lỗi", "Có lỗi xảy ra khi xóa bình luận!");
+          }
+        },
+      },
+    ]);
+  };
+
+  const navigateToProduct = (productId: string, color: string) => {
+    router.push(`/products/${productId}_${color.replace("#", "")}`);
   };
 
   if (loading) {
@@ -376,127 +491,211 @@ export default function ComboDetail() {
 
   return (
     <ScrollView style={[styles.container, { backgroundColor: themeColors.background }]}>
-      <View style={styles.header}>
-        <TouchableOpacity
-          onPress={() => router.push('/combos')}
-          style={[styles.backButton, { backgroundColor: themeColors.secondaryBackground }]}
-        >
-          <ArrowLeft size={24} color={themeColors.textPrimary} />
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={handleToggleLike}
-          style={[styles.wishlistButton, { backgroundColor: themeColors.secondaryBackground }]}
-        >
-          <Heart
-            size={24}
-            color={isLiked ? "#ff0000" : themeColors.iconPrimary}
-            fill={isLiked ? "#ff0000" : "none"}
-          />
-        </TouchableOpacity>
-      </View>
-
-      <Image
-        source={{ uri: combo.hinhAnh || "https://via.placeholder.com/300" }}
-        style={styles.productImage}
-      />
-
-      <View style={styles.content}>
-        <Text style={[styles.name, { color: themeColors.textPrimary }]}>{combo.name}</Text>
-        <Text style={[styles.shortDescription, { color: themeColors.textTertiary }]}>{combo.moTa}</Text>
-        <Text style={[styles.price, { color: themeColors.iconPrimary }]}>
-          {(selectedPrice / 1000).toFixed(3)} VND
-        </Text>
-
-        {combo.sanPhams.map((product, index) => (
-          <View key={index} style={styles.productSection}>
-            <View style={styles.productRow}>
-              <Image
-                source={{ uri: product.hinh[0] || "https://via.placeholder.com/80" }}
-                style={styles.productThumbnail}
-              />
-              <Text style={[styles.productName, { color: themeColors.textPrimary }]}>{product.name}</Text>
-            </View>
-
-            <Text style={[styles.sectionTitle, { color: themeColors.textPrimary }]}>Màu sắc</Text>
-            <View style={styles.colorsContainer}>
-              {product.mauSac.map((color, colorIndex) => (
-                <TouchableOpacity
-                  key={colorIndex}
-                  style={[
-                    styles.colorButton,
-                    { backgroundColor: `#${color}` },
-                    selections[product.idSanPham]?.colorIndex === colorIndex && styles.selectedBorder,
-                  ]}
-                  onPress={() => handleSelectionChange(product.idSanPham, "colorIndex", colorIndex)}
-                />
-              ))}
-            </View>
-
-            <Text style={[styles.sectionTitle, { color: themeColors.textPrimary }]}>Kích thước</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.sizesContainer}>
-              {sizeQuantities[product.idSanPham]?.map((sizeData, sizeIndex) => (
-                <TouchableOpacity
-                  key={sizeIndex}
-                  style={[
-                    styles.sizeButton,
-                    { backgroundColor: themeColors.secondaryBackground },
-                    selections[product.idSanPham]?.sizeIndex === sizeIndex && styles.selectedBorder,
-                  ]}
-                  onPress={() => handleSelectionChange(product.idSanPham, "sizeIndex", sizeIndex)}
-                  disabled={sizeData.quantity === 0}
-                >
-                  <Text
-                    style={[
-                      styles.sizeText,
-                      {
-                        color: selections[product.idSanPham]?.sizeIndex === sizeIndex ? "#fff" : themeColors.textPrimary,
-                        opacity: sizeData.quantity === 0 ? 0.5 : 1,
-                      },
-                    ]}
-                  >
-                    {sizeData.size} ({sizeData.quantity})
-                  </Text>
-                </TouchableOpacity>
-              ))}
-              {!sizeQuantities[product.idSanPham]?.length && (
-                <Text style={[styles.errorText, { color: themeColors.textTertiary }]}>
-                  Không có kích thước nào khả dụng cho màu này.
-                </Text>
-              )}
-            </ScrollView>
-          </View>
-        ))}
-
-        <Text style={[styles.sectionTitle, { color: themeColors.textPrimary }]}>Số lượng</Text>
-        <View style={styles.quantityContainer}>
+      <View>
+        <View style={styles.header}>
           <TouchableOpacity
-            style={[styles.quantityButton, { borderColor: themeColors.textSecondary }]}
-            onPress={() => setQuantity(Math.max(1, quantity - 1))}
-            disabled={quantity <= 1}
+            onPress={() => router.push('/combos')}
+            style={[styles.backButton, { backgroundColor: themeColors.secondaryBackground }]}
           >
-            <Text style={[styles.quantityText, { color: themeColors.textPrimary }]}>-</Text>
+            <ArrowLeft size={24} color={themeColors.textPrimary} />
           </TouchableOpacity>
-          <Text style={[styles.quantityValue, { color: themeColors.textPrimary }]}>{quantity}</Text>
           <TouchableOpacity
-            style={[styles.quantityButton, { borderColor: themeColors.textSecondary }]}
-            onPress={() => setQuantity(quantity + 1)}
+            onPress={handleToggleLike}
+            style={[styles.wishlistButton, { backgroundColor: themeColors.secondaryBackground }]}
           >
-            <Text style={[styles.quantityText, { color: themeColors.textPrimary }]}>+</Text>
+            <Heart
+              size={24}
+              color={isLiked ? "#ff0000" : themeColors.iconPrimary}
+              fill={isLiked ? "#ff0000" : "none"}
+            />
           </TouchableOpacity>
         </View>
-        <TouchableOpacity
-          style={[styles.addToCartButton, { backgroundColor: themeColors.iconPrimary }]}
-          onPress={handleAddToCart}
-        >
-          <ShoppingBag size={20} color="#fff" />
-          <Text style={styles.addToCartText}>Thêm vào giỏ hàng</Text>
-        </TouchableOpacity>
+
+        <Image
+          source={{ uri: combo.hinhAnh || "https://via.placeholder.com/300" }}
+          style={styles.productImage}
+        />
+
+        <View style={styles.content}>
+          <Text style={[styles.name, { color: themeColors.textPrimary }]}>{combo.name}</Text>
+          <Text style={[styles.shortDescription, { color: themeColors.textTertiary }]}>{combo.moTa}</Text>
+          <Text style={[styles.price, { color: themeColors.iconPrimary }]}> {(selectedPrice / 1000).toFixed(3)} VND </Text>
+
+          {combo.sanPhams.map((product, index) => (
+            <View key={index} style={styles.productSection}>
+              <View style={styles.productRow}>
+                <TouchableOpacity onPress={() => navigateToProduct(product.idSanPham, product.mauSac[0] || "")}>
+                  <Image
+                    source={{ uri: product.hinh[0] || "https://via.placeholder.com/80" }}
+                    style={styles.productThumbnail}
+                  />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => navigateToProduct(product.idSanPham, product.mauSac[0] || "")}>
+                  <Text style={[styles.productName, { color: themeColors.textPrimary }]}>{product.name}</Text>
+                </TouchableOpacity>
+              </View>
+
+              <Text style={[styles.sectionTitle, { color: themeColors.textPrimary }]}>Màu sắc</Text>
+              <View style={styles.colorsContainer}>
+                {product.mauSac.map((color, colorIndex) => (
+                  <TouchableOpacity
+                    key={colorIndex}
+                    style={[styles.colorButton, { backgroundColor: `#${color}` }, selections[product.idSanPham]?.colorIndex === colorIndex && styles.selectedBorder]}
+                    onPress={() => handleSelectionChange(product.idSanPham, "colorIndex", colorIndex)}
+                  />
+                ))}
+              </View>
+
+              <Text style={[styles.sectionTitle, { color: themeColors.textPrimary }]}>Kích thước</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.sizesContainer}>
+                {sizeQuantities[product.idSanPham] && sizeQuantities[product.idSanPham].length > 0 ? (
+                  sizeQuantities[product.idSanPham].map((sizeData, sizeIndex) => (
+                    <TouchableOpacity
+                      key={sizeIndex}
+                      style={[styles.sizeButton, { backgroundColor: themeColors.secondaryBackground }, selections[product.idSanPham]?.sizeIndex === sizeIndex && styles.selectedBorder]}
+                      onPress={() => handleSelectionChange(product.idSanPham, "sizeIndex", sizeIndex)}
+                      disabled={sizeData.quantity === 0}
+                    >
+                      <Text
+                        style={[styles.sizeText, {
+                          color: selections[product.idSanPham]?.sizeIndex === sizeIndex ? "#fff" : themeColors.textPrimary,
+                          opacity: sizeData.quantity === 0 ? 0.5 : 1,
+                        }]}
+                      >
+                        {sizeData.size} ({sizeData.quantity})
+                      </Text>
+                    </TouchableOpacity>
+                  ))
+                ) : (
+                  <Text style={[styles.errorText, { color: themeColors.textTertiary }]}>
+                    Không có kích thước nào khả dụng cho màu này.
+                  </Text>
+                )}
+              </ScrollView>
+            </View>
+          ))}
+
+          <Text style={[styles.sectionTitle, { color: themeColors.textPrimary }]}>Số lượng</Text>
+          <View style={styles.quantityContainer}>
+            <TouchableOpacity
+              style={[styles.quantityButton, { borderColor: themeColors.textSecondary }]}
+              onPress={() => setQuantity(Math.max(1, quantity - 1))}
+              disabled={quantity <= 1}
+            >
+              <Text style={[styles.quantityText, { color: themeColors.textPrimary }]}>-</Text>
+            </TouchableOpacity>
+            <Text style={[styles.quantityValue, { color: themeColors.textPrimary }]}>{quantity}</Text>
+            <TouchableOpacity
+              style={[styles.quantityButton, { borderColor: themeColors.textSecondary }]}
+              onPress={() => setQuantity(quantity + 1)}
+            >
+              <Text style={[styles.quantityText, { color: themeColors.textPrimary }]}>+</Text>
+            </TouchableOpacity>
+          </View>
+
+          <TouchableOpacity
+            style={[styles.button, { backgroundColor: themeColors.iconPrimary }]}
+            onPress={handleAddToCart}
+          >
+            <ShoppingBag size={20} color="#fff" />
+            <Text style={styles.addToCartText}>Thêm vào giỏ hàng</Text>
+          </TouchableOpacity>
+          <Text style={[styles.sectionTitle, { color: themeColors.textPrimary, fontSize: 24 }]}>Đánh giá Combos</Text>
+          <View style={styles.commentForm}>
+            <View style={styles.ratingInput}>
+              {Array.from({ length: 5 }).map((_, index) => (
+                <TouchableOpacity key={index} onPress={() => setRating(index + 1)}>
+                  <Star
+                    size={24}
+                    color={index < rating ? '#facc15' : '#d1d5db'}
+                    fill={index < rating ? '#facc15' : 'none'}
+                  />
+                </TouchableOpacity>
+              ))}
+            </View>
+            <View style={[styles.inputWrapper, { borderColor: themeColors.textSecondary }]}>
+              <TextInput
+                style={[styles.commentInput, { color: themeColors.textPrimary }]}
+                placeholder="Nhập đánh giá của bạn..."
+                placeholderTextColor={themeColors.textTertiary}
+                value={newComment}
+                onChangeText={setNewComment}
+                multiline
+              />
+              <TouchableOpacity style={styles.submitIcon} onPress={handleAddComment}>
+                <Send size={20} color={themeColors.iconPrimary} />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          <View style={styles.commentsContainer}>
+            {comments.length === 0 ? (
+              <Text style={[styles.noComments, { color: themeColors.textTertiary }]}>Chưa có đánh giá nào.</Text>
+            ) : (
+              comments.map(comment => (
+                <View
+                  key={comment.maBinhLuan}
+                  style={[styles.comment, { backgroundColor: isDarkMode ? '#2D3748' : '#F7FAFC' }]}
+                >
+                  <View style={styles.commentHeader}>
+                    <View style={styles.commentAuthorContainer}>
+                      {comment.hinhAnh ? (
+                        <Image
+                          source={{ uri: `data:image/jpeg;base64,${comment.hinhAnh}` }}
+                          style={styles.commentAvatar}
+                        />
+                      ) : (
+                        <View style={[styles.commentAvatar, styles.placeholderAvatar]}>
+                          <Text style={[styles.placeholderText, { color: themeColors.textSecondary }]}>
+                            {comment.hoTen?.charAt(0)?.toUpperCase() || '?'}
+                          </Text>
+                        </View>
+                      )}
+                      <Text style={[styles.commentAuthor, { color: themeColors.textPrimary }]}>{comment.hoTen}</Text>
+                    </View>
+                    {comment.maNguoiDung === userData?.maNguoiDung && (
+                      <TouchableOpacity onPress={() => handleDeleteComment(comment.maBinhLuan)}>
+                        <Trash2 size={20} color="#ef4444" />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+
+                  <View style={styles.commentMeta}>
+                    {Array.from({ length: 5 }).map((_, index) => (
+                      <Star
+                        key={index}
+                        size={16}
+                        color={index < comment.danhGia ? '#facc15' : '#d1d5db'}
+                        fill={index < comment.danhGia ? '#facc15' : 'none'}
+                      />
+                    ))}
+                    <Text style={[styles.commentDate, { color: themeColors.textTertiary }]}>
+                      {new Date(comment.ngayBinhLuan).toLocaleDateString()}
+                    </Text>
+                  </View>
+                  <Text style={[styles.commentText, { color: themeColors.textPrimary }]}>{comment.noiDungBinhLuan}</Text>
+                </View>
+              ))
+            )}
+          </View>
+        </View>
       </View>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
+  button: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    marginTop: 20,
+    marginVertical: 20,
+  },
+
   container: {
     flex: 1,
   },
@@ -523,7 +722,7 @@ const styles = StyleSheet.create({
   },
   productImage: {
     width: "100%",
-    height: 400,
+    height: 200,
   },
   content: {
     padding: 24,
@@ -532,6 +731,16 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontFamily: "Poppins_600SemiBold",
     marginBottom: 8,
+  },
+  ratingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  ratingText: {
+    marginLeft: 4,
+    fontSize: 14,
+    fontFamily: 'Poppins_400Regular',
   },
   shortDescription: {
     fontSize: 16,
@@ -614,12 +823,6 @@ const styles = StyleSheet.create({
     fontFamily: "Poppins_500Medium",
     marginHorizontal: 16,
   },
-  description: {
-    fontSize: 14,
-    fontFamily: "Poppins_400Regular",
-    lineHeight: 24,
-    marginBottom: 24,
-  },
   addToCartButton: {
     flexDirection: "row",
     alignItems: "center",
@@ -643,5 +846,87 @@ const styles = StyleSheet.create({
   selectedBorder: {
     borderWidth: 2,
     borderColor: "#3b82f6",
+  },
+  commentForm: {
+    marginBottom: 24,
+  },
+  ratingInput: {
+    flexDirection: "row",
+    marginBottom: 12,
+  },
+  inputWrapper: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+  },
+  commentInput: {
+    flex: 1,
+    fontSize: 16,
+    fontFamily: "Poppins_400Regular",
+    minHeight: 100,
+    textAlignVertical: "top",
+  },
+  submitIcon: {
+    marginLeft: 8,
+  },
+  commentsContainer: {
+    marginBottom: 24,
+  },
+  comment: {
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 12,
+  },
+  commentHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  commentAuthorContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  commentAvatar: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    marginRight: 8,
+  },
+  placeholderAvatar: {
+    backgroundColor: "#A0AEC0",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  placeholderText: {
+    color: "#fff",
+    fontSize: 12,
+    fontFamily: "Poppins_600SemiBold",
+  },
+  commentAuthor: {
+    fontSize: 14,
+    fontFamily: "Poppins_600SemiBold",
+  },
+  commentMeta: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  commentDate: {
+    fontSize: 12,
+    fontFamily: "Poppins_400Regular",
+    marginLeft: 8,
+  },
+  commentText: {
+    fontSize: 14,
+    fontFamily: "Poppins_400Regular",
+    lineHeight: 20,
+  },
+  noComments: {
+    fontSize: 14,
+    fontFamily: "Poppins_400Regular",
+    textAlign: "center",
   },
 });
