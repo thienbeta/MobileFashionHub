@@ -453,7 +453,7 @@ const styles = StyleSheet.create({
     },
     blogImage: {
         width: "100%",
-        height: 300,
+        height: 200,
     },
     content: {
         padding: 16,

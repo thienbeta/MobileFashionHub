@@ -682,7 +682,7 @@ const styles = StyleSheet.create({
   },
   productImage: {
     width: '100%',
-    height: 400,
+    height: 200,
   },
   thumbnailContainer: {
     flexDirection: 'row',
