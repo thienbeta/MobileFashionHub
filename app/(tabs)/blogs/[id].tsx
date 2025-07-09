@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
     View,
     Text,
@@ -9,6 +9,7 @@ import {
     ActivityIndicator,
     Alert,
     TextInput,
+    Dimensions,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useTheme } from "../../context/theme";
@@ -17,6 +18,8 @@ import { apiFetch } from "../../../src/utils/api";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Share } from "react-native";
 import * as FileSystem from "expo-file-system";
+import RenderHTML, { CustomBlockRenderer } from "react-native-render-html";
+import { convert } from "html-to-text";
 
 const API_BASE_URL = "http://192.168.10.32:5261/api";
 
@@ -73,15 +76,20 @@ export default function BlogDetailScreen() {
     const [comments, setComments] = useState<Comment[]>([]);
     const [newComment, setNewComment] = useState("");
     const [rating] = useState(5);
+    const [htmlError, setHtmlError] = useState(false);
+
+    const { width } = Dimensions.get("window");
 
     const fetchBlogAndComments = async () => {
         try {
             setLoading(true);
             setError(null);
+            setHtmlError(false);
             const baseId = Array.isArray(id) ? id[0] : id;
             if (!baseId) throw new Error("ID không hợp lệ");
 
             const blogResponse = await apiFetch(`${API_BASE_URL}/Blog/${baseId}`, "BlogDetail");
+            if (!blogResponse.isPublished) throw new Error("Bài viết chưa được công khai");
             setBlog(blogResponse);
 
             try {
@@ -91,7 +99,7 @@ export default function BlogDetailScreen() {
                 );
                 setNguoiDung(nguoiDungResponse);
             } catch {
-                setNguoiDung(null);
+                setNguoiDung({ maNguoiDung: blogResponse.maNguoiDung, hoTen: "Unknown", vaiTro: "", hinhAnh: null });
             }
 
             const favorites = await AsyncStorage.getItem("favorites");
@@ -113,14 +121,13 @@ export default function BlogDetailScreen() {
                 const nguoiDungData = await apiFetch(`${API_BASE_URL}/NguoiDung/${userData.maNguoiDung}`, "User");
                 enrichedComments = blogComments.map((comment: Comment) => ({
                     ...comment,
-                    hoTen: comment.maNguoiDung === userData.maNguoiDung ? userData?.hoTen : comment.hoTen,
+                    hoTen: comment.maNguoiDung === userData.maNguoiDung ? userData.hoTen : comment.hoTen,
                     hinhAnh: comment.maNguoiDung === userData.maNguoiDung ? nguoiDungData.hinhAnh : comment.hinhAnh,
                 }));
             }
-
             setComments(enrichedComments);
-        } catch (err) {
-            setError("Không thể tải bài viết hoặc bình luận. Vui lòng kiểm tra ID hoặc liên hệ admin.");
+        } catch (err: any) {
+            setError(err.message || "Không thể tải bài viết hoặc bình luận. Vui lòng kiểm tra lại.");
         } finally {
             setLoading(false);
         }
@@ -137,7 +144,7 @@ export default function BlogDetailScreen() {
                     setUserData(parsedUserData.user || null);
                     setAuthToken(parsedUserData.token || null);
                 }
-            } catch (error) {
+            } catch {
                 setError("Không thể tải thông tin người dùng.");
             }
         };
@@ -149,71 +156,63 @@ export default function BlogDetailScreen() {
     }, [id, userData, authToken]);
 
     const toggleFavorite = async () => {
+        if (!blog) return;
         try {
             const newFavoriteStatus = !isFavorite;
             setIsFavorite(newFavoriteStatus);
-
             const favorites = await AsyncStorage.getItem("favorites");
             let favoriteIds = favorites ? JSON.parse(favorites) : [];
-
             if (newFavoriteStatus) {
-                favoriteIds.push(blog!.maBlog);
+                favoriteIds.push(blog.maBlog);
             } else {
-                favoriteIds = favoriteIds.filter((id: number) => id !== blog!.maBlog);
+                favoriteIds = favoriteIds.filter((id: number) => id !== blog.maBlog);
             }
-
             await AsyncStorage.setItem("favorites", JSON.stringify(favoriteIds));
             Alert.alert("Thành công", `Đã ${newFavoriteStatus ? "thêm" : "bỏ"} bài viết vào danh sách yêu thích!`);
-        } catch (err) {
+        } catch {
             setIsFavorite(!isFavorite);
             Alert.alert("Lỗi", "Không thể cập nhật danh sách yêu thích.");
         }
     };
 
     const handleShare = async () => {
-        if (blog) {
-            try {
-                const message = `${blog.tieuDe}\n\n${blog.noiDung.substring(0, 6)}...\nXem chi tiết: ${API_BASE_URL}/blogs/${blog.maBlog}`;
-                await Share.share({
-                    message: message,
-                    title: blog.tieuDe,
-                });
-            } catch (err) {
-                Alert.alert("Lỗi", "Không thể chia sẻ bài viết.");
-            }
+        if (!blog) return;
+        try {
+            const plainText = convert(blog.noiDung, { wordwrap: 130 });
+            const message = `${blog.tieuDe}\n\n${plainText.substring(0, 100)}...\nXem chi tiết: ${API_BASE_URL}/blogs/${blog.slug || blog.maBlog}`;
+            await Share.share({ message, title: blog.tieuDe });
+        } catch {
+            Alert.alert("Lỗi", "Không thể chia sẻ bài viết.");
         }
     };
 
     const handleAddComment = async () => {
+        if (!newComment.trim()) {
+            Alert.alert("Lỗi", "Vui lòng nhập nội dung bình luận!");
+            return;
+        }
+        if (!userData?.maNguoiDung || !authToken) {
+            Alert.alert("Lỗi", "Vui lòng đăng nhập trước khi thêm bình luận!", [
+                { text: "OK", onPress: () => router.push("/(auth)/login") },
+            ]);
+            return;
+        }
+
+        if (!id || Array.isArray(id)) {
+            Alert.alert("Lỗi", "ID blog không hợp lệ!");
+            return;
+        }
         try {
-            if (!newComment) {
-                Alert.alert("Lỗi", "Vui lòng nhập nội dung bình luận!");
-                return;
-            }
-
-            if (!userData?.maNguoiDung || !authToken) {
-                Alert.alert("Lỗi", "Vui lòng đăng nhập trước khi thêm bình luận!", [
-                    { text: "OK", onPress: () => router.push("/(auth)/login") },
-                ]);
-                return;
-            }
-
-            if (!id || Array.isArray(id)) {
-                Alert.alert("Lỗi", "ID blog không hợp lệ!");
-                return;
-            }
-
             const commentData = {
                 maBlog: parseInt(id),
                 maNguoiDung: userData.maNguoiDung,
-                hoTen: userData?.hoTen,
-                noiDungBinhLuan: newComment,
+                hoTen: userData.hoTen,
+                noiDungBinhLuan: newComment.trim(),
                 danhGia: rating,
                 ngayBinhLuan: new Date().toISOString(),
                 trangThai: 1,
                 hinhAnh: userData?.hinhAnh,
             };
-
             const newCommentResponse = await apiFetch(`${API_BASE_URL}/Comment/add`, "AddComment", {
                 method: "POST",
                 headers: {
@@ -222,14 +221,13 @@ export default function BlogDetailScreen() {
                 },
                 body: JSON.stringify(commentData),
             });
-
             setComments((prev) => [
                 {
                     maBinhLuan: String(newCommentResponse.maBinhLuan),
                     maBlog: parseInt(id),
                     maNguoiDung: userData.maNguoiDung,
                     hoTen: userData.hoTen,
-                    noiDungBinhLuan: newComment,
+                    noiDungBinhLuan: newComment.trim(),
                     danhGia: rating,
                     ngayBinhLuan: new Date().toISOString(),
                     trangThai: 1,
@@ -237,36 +235,33 @@ export default function BlogDetailScreen() {
                 },
                 ...prev,
             ]);
-
             setNewComment("");
             Alert.alert("Thành công", "Bình luận của bạn đã được thêm!");
-        } catch (err) {
+        } catch {
             Alert.alert("Lỗi", "Có lỗi xảy ra khi thêm bình luận!");
         }
     };
 
     const handleDeleteComment = async (maBinhLuan: string) => {
+        if (!authToken) {
+            Alert.alert("Lỗi", "Bạn cần đăng nhập để thực hiện chức năng này!", [
+                { text: "OK", onPress: () => router.push("/(auth)/login") },
+            ]);
+            return;
+        }
         Alert.alert("Xác nhận", "Bạn có chắc muốn xóa bình luận này không?", [
             { text: "Không", style: "cancel" },
             {
                 text: "Có",
                 onPress: async () => {
                     try {
-                        if (!authToken) {
-                            Alert.alert("Lỗi", "Bạn cần đăng nhập để thực hiện chức năng này!", [
-                                { text: "OK", onPress: () => router.push("/(auth)/login") },
-                            ]);
-                            return;
-                        }
-
                         await apiFetch(`${API_BASE_URL}/Comment/delete/${maBinhLuan}`, "DeleteComment", {
                             method: "DELETE",
                             headers: { Authorization: `Bearer ${authToken}` },
                         });
-
                         setComments((prev) => prev.filter((comment) => comment.maBinhLuan !== maBinhLuan));
                         Alert.alert("Thành công", "Xóa bình luận thành công!");
-                    } catch (err) {
+                    } catch {
                         Alert.alert("Lỗi", "Có lỗi xảy ra khi xóa bình luận!");
                     }
                 },
@@ -277,7 +272,48 @@ export default function BlogDetailScreen() {
     const retryFetch = () => {
         setLoading(true);
         setError(null);
+        setHtmlError(false);
         fetchBlogAndComments();
+    };
+
+    const htmlContent = useMemo(() => {
+        if (!blog?.noiDung) return { html: "" };
+        try {
+            const sanitizedHtml = blog.noiDung
+                .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
+                .replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, "")
+                .replace(/on\w+="[^"]*"/g, "");
+            return { html: sanitizedHtml };
+        } catch (error) {
+            console.error("HTML parsing error:", error);
+            setHtmlError(true);
+            return { html: "" };
+        }
+    }, [blog?.noiDung]);
+
+    const customRenderers: { img: CustomBlockRenderer } = {
+        img: ({ tnode }) => {
+            const src = tnode.attributes?.src;
+            if (src && src.startsWith("data:image")) {
+                return (
+                    <Image
+                        key={tnode.nodeIndex}
+                        source={{ uri: src }}
+                        style={{
+                            width: width - 32,
+                            height: 200,
+                            borderRadius: 8,
+                            marginVertical: 8,
+                        }}
+                        resizeMode="contain"
+                        onError={(error) => {
+                            console.log("Image loading error:", error);
+                        }}
+                    />
+                );
+            }
+            return null;
+        },
     };
 
     if (loading) {
@@ -291,8 +327,10 @@ export default function BlogDetailScreen() {
     if (error || !blog) {
         return (
             <View style={[styles.container, { backgroundColor: themeColors.background }]}>
-                <Text style={[styles.errorText, { color: themeColors.textPrimary }]}>{error || "Không tìm thấy bài viết"}</Text>
-                <TouchableOpacity onPress={retryFetch} style={styles.retryButton}>
+                <Text style={[styles.errorText, { color: themeColors.textPrimary }]}>
+                    {error || "Không tìm thấy bài viết"}
+                </Text>
+                <TouchableOpacity onPress={retryFetch} style={styles.retryButton} accessibilityLabel="Thử lại">
                     <Text style={[styles.retryText, { color: themeColors.accent }]}>Thử lại</Text>
                 </TouchableOpacity>
             </View>
@@ -308,25 +346,47 @@ export default function BlogDetailScreen() {
     return (
         <ScrollView style={[styles.container, { backgroundColor: themeColors.background }]}>
             <View style={styles.header}>
-                <TouchableOpacity onPress={() => router.push('/blogs')} style={styles.backButton}>
+                <TouchableOpacity
+                    onPress={() => router.push("/blogs")}
+                    style={styles.backButton}
+                    accessibilityLabel="Quay lại danh sách bài viết"
+                >
                     <ArrowLeft size={24} color={themeColors.textPrimary} />
                 </TouchableOpacity>
                 <View style={styles.actionButtons}>
-                    <TouchableOpacity onPress={toggleFavorite} style={styles.actionButton}>
-                        <Star size={24} color={isFavorite ? themeColors.accent : themeColors.textSecondary} fill={isFavorite ? themeColors.accent : "none"} />
+                    <TouchableOpacity
+                        onPress={toggleFavorite}
+                        style={styles.actionButton}
+                        accessibilityLabel={isFavorite ? "Bỏ yêu thích" : "Thêm vào yêu thích"}
+                    >
+                        <Star
+                            size={24}
+                            color={isFavorite ? themeColors.accent : themeColors.textSecondary}
+                            fill={isFavorite ? themeColors.accent : "none"}
+                        />
                     </TouchableOpacity>
-                    <TouchableOpacity onPress={handleShare} style={styles.actionButton}>
+                    <TouchableOpacity
+                        onPress={handleShare}
+                        style={styles.actionButton}
+                        accessibilityLabel="Chia sẻ bài viết"
+                    >
                         <ShareIcon size={24} color={themeColors.textSecondary} />
                     </TouchableOpacity>
                 </View>
             </View>
 
-            {blog.hinhAnh && (
+            {blog.hinhAnh ? (
                 <Image
                     source={{ uri: `data:image/jpeg;base64,${blog.hinhAnh}` }}
                     style={styles.blogImage}
                     resizeMode="cover"
+                    accessibilityLabel={blog.moTaHinhAnh || blog.tieuDe}
+                    onError={() => setBlog({ ...blog, hinhAnh: null })}
                 />
+            ) : (
+                <View style={[styles.blogImage, styles.placeholderImage]}>
+                    <Text style={styles.placeholderText}>Không có hình ảnh</Text>
+                </View>
             )}
 
             <View style={styles.content}>
@@ -337,11 +397,13 @@ export default function BlogDetailScreen() {
                             <Image
                                 source={{ uri: `data:image/jpeg;base64,${nguoiDung.hinhAnh}` }}
                                 style={styles.authorAvatar}
+                                accessibilityLabel={`Avatar của ${nguoiDung.hoTen}`}
+                                onError={() => setNguoiDung({ ...nguoiDung!, hinhAnh: null })}
                             />
                         ) : (
                             <View style={[styles.authorAvatar, styles.placeholderAvatar]}>
                                 <Text style={styles.placeholderText}>
-                                    {nguoiDung?.hoTen.charAt(0).toUpperCase() || "?"}
+                                    {nguoiDung?.hoTen?.charAt(0)?.toUpperCase() || "?"}
                                 </Text>
                             </View>
                         )}
@@ -351,16 +413,150 @@ export default function BlogDetailScreen() {
                     </View>
                     <Text style={[styles.date, { color: themeColors.textSecondary }]}>Ngày tạo: {formattedDate}</Text>
                 </View>
-                <Text style={[styles.contentText, { color: themeColors.textPrimary }]}>{blog.noiDung}</Text>
+
+                {htmlError ? (
+                    <Text style={[styles.contentText, { color: themeColors.textPrimary }]}>
+                        {convert(blog.noiDung, { wordwrap: 130 }) || "Nội dung không khả dụng"}
+                    </Text>
+                ) : (
+                    <RenderHTML
+                        contentWidth={width - 32}
+                        source={htmlContent}
+                        baseStyle={{
+                            fontSize: 16,
+                            lineHeight: 24,
+                            color: themeColors.textPrimary,
+                        }}
+                        tagsStyles={{
+                            p: {
+                                fontSize: 16,
+                                lineHeight: 24,
+                                marginBottom: 8,
+                                color: themeColors.textPrimary,
+                            },
+                            h1: {
+                                fontSize: 24,
+                                fontWeight: "bold",
+                                marginVertical: 12,
+                                color: themeColors.textPrimary,
+                            },
+                            h2: {
+                                fontSize: 20,
+                                fontWeight: "bold",
+                                marginVertical: 10,
+                                color: themeColors.textPrimary,
+                            },
+                            h3: {
+                                fontSize: 18,
+                                fontWeight: "bold",
+                                marginVertical: 8,
+                                color: themeColors.textPrimary,
+                            },
+                            h4: {
+                                fontSize: 16,
+                                fontWeight: "bold",
+                                marginVertical: 6,
+                                color: themeColors.textPrimary,
+                            },
+                            strong: {
+                                fontWeight: "bold",
+                                color: themeColors.textPrimary,
+                            },
+                            em: {
+                                fontStyle: "italic",
+                                color: themeColors.textPrimary,
+                            },
+                            ul: {
+                                marginLeft: 16,
+                                marginBottom: 8,
+                            },
+                            ol: {
+                                marginLeft: 16,
+                                marginBottom: 8,
+                            },
+                            li: {
+                                marginBottom: 4,
+                                color: themeColors.textPrimary,
+                            },
+                            a: {
+                                color: themeColors.accent,
+                                textDecorationLine: "underline",
+                            },
+                            blockquote: {
+                                borderLeftWidth: 4,
+                                borderLeftColor: themeColors.accent,
+                                paddingLeft: 16,
+                                marginVertical: 8,
+                                fontStyle: "italic",
+                                backgroundColor: isDarkMode ? "#2A2A2A" : "#F5F5F5",
+                                padding: 12,
+                                borderRadius: 4,
+                            },
+                            code: {
+                                backgroundColor: isDarkMode ? "#2A2A2A" : "#F5F5F5",
+                                padding: 4,
+                                borderRadius: 4,
+                                fontFamily: "monospace",
+                                fontSize: 14,
+                            },
+                            pre: {
+                                backgroundColor: isDarkMode ? "#2A2A2A" : "#F5F5F5",
+                                padding: 12,
+                                borderRadius: 8,
+                                marginVertical: 8,
+                            },
+                            table: {
+                                borderWidth: 1,
+                                borderColor: themeColors.textSecondary,
+                                borderRadius: 4,
+                                marginVertical: 8,
+                            },
+                            th: {
+                                backgroundColor: isDarkMode ? "#2A2A2A" : "#F5F5F5",
+                                padding: 8,
+                                fontWeight: "bold",
+                                borderBottomWidth: 1,
+                                borderBottomColor: themeColors.textSecondary,
+                            },
+                            td: {
+                                padding: 8,
+                                borderBottomWidth: 1,
+                                borderBottomColor: themeColors.textSecondary,
+                            },
+                        }}
+                        renderers={customRenderers}
+                    />
+                )}
+
                 {blog.tags && blog.tags.length > 0 && (
                     <View style={styles.tagsContainer}>
-                        {blog.tags.map((tag, index) => (
-                            <Text key={index} style={[styles.tag, isDarkMode && styles.tagDark]}>{tag}</Text>
-                        ))}
+                        <Text style={[styles.tagTitle, { color: themeColors.textPrimary }]}>Tags:</Text>
+                        <View style={styles.tagsList}>
+                            {blog.tags.map((tag, index) => (
+                                <Text
+                                    key={index}
+                                    style={[
+                                        styles.tag,
+                                        {
+                                            backgroundColor: isDarkMode ? "#4A5568" : "#E6E6FA",
+                                            color: isDarkMode ? "#fff" : "#2D3748",
+                                        },
+                                    ]}
+                                    accessibilityLabel={`Tag: ${tag}`}
+                                >
+                                    #{tag}
+                                </Text>
+                            ))}
+                        </View>
                     </View>
                 )}
 
-                <Text style={[styles.sectionTitle, { color: themeColors.textPrimary }]}>Bình luận bài viết</Text>
+                <View style={styles.divider} />
+
+                <Text style={[styles.sectionTitle, { color: themeColors.textPrimary }]}>
+                    Bình luận ({comments.length})
+                </Text>
+
                 <View style={styles.commentForm}>
                     <View style={[styles.inputWrapper, { borderColor: themeColors.textSecondary }]}>
                         <TextInput
@@ -370,21 +566,41 @@ export default function BlogDetailScreen() {
                             value={newComment}
                             onChangeText={setNewComment}
                             multiline
+                            numberOfLines={4}
+                            accessibilityLabel="Nhập bình luận"
                         />
-                        <TouchableOpacity style={styles.submitIcon} onPress={handleAddComment}>
-                            <Send size={20} color={themeColors.accent} />
+                        <TouchableOpacity
+                            style={[
+                                styles.submitButton,
+                                { backgroundColor: newComment.trim() ? themeColors.accent : themeColors.textSecondary },
+                            ]}
+                            onPress={handleAddComment}
+                            disabled={!newComment.trim()}
+                            accessibilityLabel="Gửi bình luận"
+                        >
+                            <Send size={20} color="#fff" />
                         </TouchableOpacity>
                     </View>
                 </View>
 
                 <View style={styles.commentsContainer}>
                     {comments.length === 0 ? (
-                        <Text style={[styles.noComments, { color: themeColors.textSecondary }]}>Chưa có bình luận nào.</Text>
+                        <View style={styles.noCommentsContainer}>
+                            <Text style={[styles.noComments, { color: themeColors.textSecondary }]}>
+                                Chưa có bình luận nào. Hãy là người đầu tiên bình luận!
+                            </Text>
+                        </View>
                     ) : (
                         comments.map((comment) => (
                             <View
                                 key={comment.maBinhLuan}
-                                style={[styles.comment, { backgroundColor: isDarkMode ? '#2D3748' : '#F7FAFC' }]}
+                                style={[
+                                    styles.comment,
+                                    {
+                                        backgroundColor: isDarkMode ? "#2D3748" : "#F7FAFC",
+                                        borderColor: isDarkMode ? "#4A5568" : "#E2E8F0",
+                                    },
+                                ]}
                             >
                                 <View style={styles.commentHeader}>
                                     <View style={styles.commentAuthorContainer}>
@@ -392,28 +608,48 @@ export default function BlogDetailScreen() {
                                             <Image
                                                 source={{ uri: `data:image/jpeg;base64,${comment.hinhAnh}` }}
                                                 style={styles.commentAvatar}
+                                                accessibilityLabel={`Avatar của ${comment.hoTen}`}
+                                                onError={() =>
+                                                    setComments((prev) =>
+                                                        prev.map((c) =>
+                                                            c.maBinhLuan === comment.maBinhLuan ? { ...c, hinhAnh: null } : c
+                                                        )
+                                                    )
+                                                }
                                             />
                                         ) : (
                                             <View style={[styles.commentAvatar, styles.placeholderAvatar]}>
-                                                <Text style={[styles.placeholderText, { color: themeColors.textSecondary }]}>
-                                                    {comment.hoTen?.charAt(0)?.toUpperCase() || '?'}
+                                                <Text style={[styles.placeholderText, { color: "#fff" }]}>
+                                                    {comment.hoTen?.charAt(0)?.toUpperCase() || "?"}
                                                 </Text>
                                             </View>
                                         )}
-                                        <Text style={[styles.commentAuthor, { color: themeColors.textPrimary }]}>{comment.hoTen}</Text>
+                                        <View style={styles.commentInfo}>
+                                            <Text style={[styles.commentAuthor, { color: themeColors.textPrimary }]}>
+                                                {comment.hoTen}
+                                            </Text>
+                                            <Text style={[styles.commentDate, { color: themeColors.textSecondary }]}>
+                                                {new Date(comment.ngayBinhLuan).toLocaleDateString("vi-VN", {
+                                                    year: "numeric",
+                                                    month: "short",
+                                                    day: "numeric",
+                                                })}
+                                            </Text>
+                                        </View>
                                     </View>
                                     {comment.maNguoiDung === userData?.maNguoiDung && (
-                                        <TouchableOpacity onPress={() => handleDeleteComment(comment.maBinhLuan)}>
-                                            <Trash2 size={20} color="#ef4444" />
+                                        <TouchableOpacity
+                                            onPress={() => handleDeleteComment(comment.maBinhLuan)}
+                                            style={styles.deleteButton}
+                                            accessibilityLabel={`Xóa bình luận của ${comment.hoTen}`}
+                                        >
+                                            <Trash2 size={18} color="#EF4444" />
                                         </TouchableOpacity>
                                     )}
                                 </View>
-                                <View style={styles.commentMeta}>
-                                    <Text style={[styles.commentDate, { color: themeColors.textSecondary }]}>
-                                        {new Date(comment.ngayBinhLuan).toLocaleDateString()}
-                                    </Text>
-                                </View>
-                                <Text style={[styles.commentText, { color: themeColors.textPrimary }]}>{comment.noiDungBinhLuan}</Text>
+                                <Text style={[styles.commentText, { color: themeColors.textPrimary }]}>
+                                    {comment.noiDungBinhLuan}
+                                </Text>
                             </View>
                         ))
                     )}
@@ -432,6 +668,7 @@ const styles = StyleSheet.create({
         justifyContent: "space-between",
         alignItems: "center",
         padding: 16,
+        paddingTop: 20,
     },
     backButton: {
         width: 40,
@@ -454,6 +691,13 @@ const styles = StyleSheet.create({
     blogImage: {
         width: "100%",
         height: 200,
+        borderRadius: 0,
+        marginBottom: 0,
+    },
+    placeholderImage: {
+        backgroundColor: "#E6E6FA",
+        justifyContent: "center",
+        alignItems: "center",
     },
     content: {
         padding: 16,
@@ -461,20 +705,21 @@ const styles = StyleSheet.create({
     title: {
         fontSize: 24,
         fontWeight: "bold",
-        marginBottom: 8,
+        marginBottom: 12,
+        lineHeight: 32,
     },
     meta: {
-        marginBottom: 16,
+        marginBottom: 20,
     },
     authorContainer: {
         flexDirection: "row",
         alignItems: "center",
-        marginBottom: 4,
+        marginBottom: 8,
     },
     authorAvatar: {
-        width: 24,
-        height: 24,
-        borderRadius: 12,
+        width: 28,
+        height: 28,
+        borderRadius: 14,
         marginRight: 8,
     },
     placeholderAvatar: {
@@ -489,6 +734,7 @@ const styles = StyleSheet.create({
     },
     author: {
         fontSize: 14,
+        fontWeight: "500",
     },
     date: {
         fontSize: 12,
@@ -499,23 +745,30 @@ const styles = StyleSheet.create({
         marginBottom: 16,
     },
     tagsContainer: {
-        flexDirection: "row",
-        flexWrap: "wrap",
+        marginTop: 20,
         marginBottom: 16,
     },
-    tag: {
-        backgroundColor: "#E6E6FA",
-        color: "#2D3748",
-        paddingHorizontal: 8,
-        paddingVertical: 4,
-        borderRadius: 12,
-        marginRight: 8,
-        marginBottom: 4,
-        fontSize: 12,
+    tagTitle: {
+        fontSize: 14,
+        fontWeight: "600",
+        marginBottom: 8,
     },
-    tagDark: {
-        backgroundColor: "#4A5568",
-        color: "#fff",
+    tagsList: {
+        flexDirection: "row",
+        flexWrap: "wrap",
+        gap: 8,
+    },
+    tag: {
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 16,
+        fontSize: 12,
+        fontWeight: "500",
+    },
+    divider: {
+        height: 1,
+        backgroundColor: "#E2E8F0",
+        marginVertical: 24,
     },
     loadingIndicator: {
         marginTop: 50,
@@ -524,14 +777,16 @@ const styles = StyleSheet.create({
         textAlign: "center",
         fontSize: 16,
         marginTop: 24,
+        paddingHorizontal: 16,
     },
     retryButton: {
-        padding: 8,
-        marginTop: 8,
+        padding: 12,
+        marginTop: 12,
         alignSelf: "center",
     },
     retryText: {
-        fontSize: 14,
+        fontSize: 16,
+        fontWeight: "600",
     },
     sectionTitle: {
         fontSize: 24,
@@ -555,16 +810,29 @@ const styles = StyleSheet.create({
         minHeight: 100,
         textAlignVertical: "top",
     },
-    submitIcon: {
+    submitButton: {
+        padding: 12,
+        borderRadius: 8,
         marginLeft: 8,
+        alignItems: "center",
+        justifyContent: "center",
     },
     commentsContainer: {
         marginBottom: 24,
+    },
+    noCommentsContainer: {
+        alignItems: "center",
+        padding: 16,
+    },
+    noComments: {
+        fontSize: 14,
+        textAlign: "center",
     },
     comment: {
         padding: 12,
         borderRadius: 12,
         marginBottom: 12,
+        borderWidth: 1,
     },
     commentHeader: {
         flexDirection: "row",
@@ -582,25 +850,21 @@ const styles = StyleSheet.create({
         borderRadius: 12,
         marginRight: 8,
     },
+    commentInfo: {
+        flexDirection: "column",
+    },
     commentAuthor: {
         fontSize: 14,
         fontWeight: "bold",
     },
-    commentMeta: {
-        flexDirection: "row",
-        alignItems: "center",
-        marginBottom: 8,
-    },
     commentDate: {
         fontSize: 12,
-        marginLeft: 8,
     },
     commentText: {
         fontSize: 14,
         lineHeight: 20,
     },
-    noComments: {
-        fontSize: 14,
-        textAlign: "center",
+    deleteButton: {
+        padding: 4,
     },
 });
