@@ -9,7 +9,7 @@ import * as FileSystem from "expo-file-system";
 import { apiFetch } from "../../../src/utils/api";
 import axios from "axios";
 
-const API_BASE_URL = "http://192.168.43.163:5261/api";
+const API_BASE_URL = "http://192.168.10.32:5261/api";
 
 interface NguoiDung {
   maNguoiDung: string;

@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { View, Text, TouchableOpacity, Switch, ActivityIndicator, Alert, StyleSheet, ScrollView, RefreshControl, Platform } from 'react-native';
-import { ChevronRight, Bell, Moon, ShoppingCart, Ticket, CircleUser, Contact, BookOpenText } from 'lucide-react-native';
+import { ChevronRight, Bell, Moon, ShoppingCart, Ticket, CircleUser, Contact, BookOpenText, MapPin } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { useTheme } from '../context/theme';
 import { Appearance } from 'react-native';
@@ -11,11 +11,12 @@ import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 
-const API_BASE_URL = 'http://192.168.43.163:5261/api/XacThuc';
+const API_BASE_URL = 'http://192.168.10.32:5261/api/XacThuc';
 
 interface UserData {
   hoTen: string;
   email: string;
+  token?: string;
 }
 
 export default function SettingsScreen() {
@@ -28,7 +29,7 @@ export default function SettingsScreen() {
 
   const isDarkMode =
     theme === 'dark' ||
-    (theme === 'system' && (Appearance.getColorScheme() === 'dark' || Appearance.getColorScheme() === null));
+    (theme === 'system' && Appearance.getColorScheme() === 'dark');
   const themeColors = isDarkMode ? colors.dark : colors.light;
 
   const loadUserData = useCallback(async () => {
@@ -57,9 +58,9 @@ export default function SettingsScreen() {
         return;
       }
 
-      setUserData({ hoTen: user.hoTen, email: user.email });
+      setUserData({ hoTen: user.hoTen, email: user.email, token: user.token });
       setIsLoading(false);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Lỗi khi đọc user.json:', error);
       setIsLoading(false);
       Alert.alert('Lỗi', 'Không thể tải thông tin người dùng. Vui lòng thử lại.', [
@@ -124,7 +125,7 @@ export default function SettingsScreen() {
       if (fileInfo.exists) {
         const fileContent = await FileSystem.readAsStringAsync(fileUri);
         const data = JSON.parse(fileContent);
-        const token = data?.token;
+        const token = data?.user?.token;
 
         if (token) {
           await axios.post(
@@ -135,6 +136,8 @@ export default function SettingsScreen() {
         }
 
         await FileSystem.deleteAsync(fileUri);
+        await AsyncStorage.multiRemove(['lastSpinTime', 'spinCount', 'selectedVoucher']);
+
         Alert.alert('Thành công', 'Đăng xuất thành công!', [
           { text: 'OK', onPress: () => router.replace('/(auth)/login') },
         ]);
@@ -142,7 +145,7 @@ export default function SettingsScreen() {
         Alert.alert('Lỗi', 'Không tìm thấy thông tin đăng nhập.');
         router.replace('/(auth)/login');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Lỗi khi đăng xuất:', error);
       Alert.alert('Lỗi', 'Đăng xuất thất bại. Vui lòng thử lại.');
     }
@@ -191,7 +194,7 @@ export default function SettingsScreen() {
       finalStatus = status;
     }
     if (finalStatus !== 'granted') {
-      Alert.alert('Không nhận được mã thông báo đẩy cho thông báo đẩy!');
+      Alert.alert('Lỗi', 'Không nhận được mã thông báo đẩy cho thông báo đẩy!');
       setIsNotificationsEnabled(false);
       return;
     }
@@ -203,9 +206,12 @@ export default function SettingsScreen() {
   async function sendPushTokenToBackend(token: string) {
     try {
       const fileUri = FileSystem.documentDirectory + 'user.json';
+      const fileInfo = await FileSystem.getInfoAsync(fileUri);
+      if (!fileInfo.exists) return;
+
       const fileContent = await FileSystem.readAsStringAsync(fileUri);
       const data = JSON.parse(fileContent);
-      const userToken = data?.token;
+      const userToken = data?.user?.token;
 
       await axios.post(
         `${API_BASE_URL}/registerPushToken`,
@@ -213,15 +219,19 @@ export default function SettingsScreen() {
         { headers: { Authorization: `Bearer ${userToken}` } }
       );
     } catch (error) {
+      console.error('Lỗi khi gửi push token:', error);
     }
   }
 
   async function removePushTokenFromBackend(token: string) {
     try {
       const fileUri = FileSystem.documentDirectory + 'user.json';
+      const fileInfo = await FileSystem.getInfoAsync(fileUri);
+      if (!fileInfo.exists) return;
+
       const fileContent = await FileSystem.readAsStringAsync(fileUri);
       const data = JSON.parse(fileContent);
-      const userToken = data?.token;
+      const userToken = data?.user?.token;
 
       await axios.post(
         `${API_BASE_URL}/unregisterPushToken`,
@@ -229,6 +239,7 @@ export default function SettingsScreen() {
         { headers: { Authorization: `Bearer ${userToken}` } }
       );
     } catch (error) {
+      console.error('Lỗi khi xóa push token:', error);
     }
   }
 
@@ -331,14 +342,25 @@ export default function SettingsScreen() {
         >
           <View style={styles.optionLeft}>
             <Ticket size={24} color={themeColors.iconPrimary} />
-            <Text style={[styles.optionText, { color: themeColors.textPrimary }]}>Voucher</Text>
+            <Text style={[styles.optionText, { color: themeColors.textPrimary }]}>Giảm giá</Text>
           </View>
           <ChevronRight size={24} color={themeColors.iconSecondary} />
         </TouchableOpacity>
 
         <TouchableOpacity
           style={[styles.option, { borderBottomColor: themeColors.border }]}
-          onPress={() => router.push('/blogs' as const)}
+          onPress={() => router.push('/(auth)/diachi')}
+        >
+          <View style={styles.optionLeft}>
+            <MapPin size={24} color={themeColors.iconPrimary} />
+            <Text style={[styles.optionText, { color: themeColors.textPrimary }]}>Địa chỉ</Text>
+          </View>
+          <ChevronRight size={24} color={themeColors.iconSecondary} />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.option, { borderBottomColor: themeColors.border }]}
+          onPress={() => router.push('/(tabs)/blogs')}
         >
           <View style={styles.optionLeft}>
             <BookOpenText size={24} color={themeColors.iconPrimary} />
@@ -364,7 +386,6 @@ export default function SettingsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.light.background,
   },
   scrollContent: {
     paddingTop: 48,

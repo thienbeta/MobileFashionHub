@@ -8,7 +8,7 @@ import axios from 'axios';
 import * as Notifications from 'expo-notifications';
 import { Ionicons } from '@expo/vector-icons';
 
-const API_BASE_URL = 'http://192.168.43.163:5261/api';
+const API_BASE_URL = 'http://192.168.10.32:5261/api';
 
 export default function ContactScreen() {
   const { theme } = useTheme();

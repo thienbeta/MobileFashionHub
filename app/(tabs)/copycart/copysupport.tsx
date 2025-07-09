@@ -36,7 +36,7 @@ interface VersionGroup {
   items: ComboItem['sanPhamList'];
 }
 
-const API_BASE_URL = 'http://192.168.43.163:5261/api';
+const API_BASE_URL = 'http://192.168.10.32:5261/api';
 
 const CartSupportScreen = () => {
   const { id } = useLocalSearchParams();

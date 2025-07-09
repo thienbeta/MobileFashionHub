@@ -15,6 +15,7 @@ export default function Layout() {
         <Stack.Screen name="(auth)/forgotpassword" options={{ title: 'Lấy lại mật khẩu', headerShown: true }} />
         <Stack.Screen name="(auth)/contact" options={{ title: 'Hỗ trợ', headerShown: true }} />
         <Stack.Screen name="(auth)/voucher" options={{ title: 'Voucher', headerShown: true }} />
+        <Stack.Screen name="(auth)/diachi" options={{ title: 'Địa chỉ', headerShown: true }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       </Stack>
     </ThemeProvider>
