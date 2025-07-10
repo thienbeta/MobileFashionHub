@@ -40,7 +40,7 @@ export default function BlogsScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const API_BASE_URL = "http://192.168.10.32:5261";
+  const API_BASE_URL = "http://192.168.10.35:5261";
 
   const debouncedSetSearchQuery = useCallback(
     debounce((query: string) => setSearchQuery(query), 300),

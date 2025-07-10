@@ -23,7 +23,7 @@ import axios from 'axios';
 import Select from 'react-native-picker-select';
 import { Ionicons } from '@expo/vector-icons';
 
-const API_BASE_URL = 'http://192.168.10.32:5261/api';
+const API_BASE_URL = 'http://192.168.10.35:5261/api';
 
 interface Province { ProvinceID: number; ProvinceName: string; }
 interface District { DistrictID: number; DistrictName: string; }

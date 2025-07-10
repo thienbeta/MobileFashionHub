@@ -24,7 +24,7 @@ import * as FileSystem from 'expo-file-system';
 import { apiFetch } from '../../src/utils/api';
 import { KeyboardTypeOptions } from 'react-native';
 
-const API_BASE_URL = 'http://192.168.10.32:5261/api';
+const API_BASE_URL = 'http://192.168.10.35:5261/api';
 const VN_ADDRESS_API = 'https://provinces.open-api.vn/api/';
 
 interface CartItem {
@@ -75,6 +75,87 @@ interface Ward {
   name: string;
 }
 
+interface ShippingData {
+  [key: string]: { fee: number; time: string };
+}
+
+const shippingData: ShippingData = {
+  "Hà Nội": { fee: 40000, time: "3 - 5 ngày" },
+  "TP. Hồ Chí Minh": { fee: 20000, time: "2 - 3 ngày" },
+  "Hải Phòng": { fee: 45000, time: "3 - 5 ngày" },
+  "Đà Nẵng": { fee: 30000, time: "2 - 3 ngày" },
+  "Cần Thơ": { fee: 30000, time: "2 - 4 ngày" },
+  "An Giang": { fee: 35000, time: "3 - 4 ngày" },
+  "Bà Rịa - Vũng Tàu": { fee: 25000, time: "2 - 3 ngày" },
+  "Bắc Giang": { fee: 45000, time: "3 - 5 ngày" },
+  "Bắc Kạn": { fee: 50000, time: "4 - 6 ngày" },
+  "Bạc Liêu": { fee: 35000, time: "3 - 4 ngày" },
+  "Bắc Ninh": { fee: 40000, time: "3 - 5 ngày" },
+  "Bến Tre": { fee: 30000, time: "2 - 4 ngày" },
+  "Bình Định": { fee: 25000, time: "2 - 3 ngày" },
+  "Bình Dương": { fee: 20000, time: "2 - 3 ngày" },
+  "Bình Phước": { fee: 20000, time: "2 - 3 ngày" },
+  "Bình Thuận": { fee: 25000, time: "2 - 3 ngày" },
+  "Cà Mau": { fee: 35000, time: "3 - 5 ngày" },
+  "Cao Bằng": { fee: 50000, time: "4 - 6 ngày" },
+  "Đắk Lắk": { fee: 0, time: "Nội tỉnh" },
+  "Đắk Nông": { fee: 15000, time: "1 - 2 ngày" },
+  "Điện Biên": { fee: 50000, time: "4 - 6 ngày" },
+  "Đồng Nai": { fee: 20000, time: "2 - 3 ngày" },
+  "Đồng Tháp": { fee: 30000, time: "3 - 4 ngày" },
+  "Gia Lai": { fee: 15000, time: "1 - 2 ngày" },
+  "Hà Giang": { fee: 50000, time: "4 - 6 ngày" },
+  "Hà Nam": { fee: 45000, time: "3 - 5 ngày" },
+  "Hà Tĩnh": { fee: 35000, time: "3 - 4 ngày" },
+  "Hải Dương": { fee: 45000, time: "3 - 5 ngày" },
+  "Hậu Giang": { fee: 35000, time: "3 - 4 ngày" },
+  "Hòa Bình": { fee: 45000, time: "3 - 5 ngày" },
+  "Hưng Yên": { fee: 40000, time: "3 - 5 ngày" },
+  "Khánh Hòa": { fee: 25000, time: "2 - 3 ngày" },
+  "Kiên Giang": { fee: 35000, time: "3 - 4 ngày" },
+  "Kon Tum": { fee: 15000, time: "1 - 2 ngày" },
+  "Lai Châu": { fee: 50000, time: "4 - 6 ngày" },
+  "Lâm Đồng": { fee: 20000, time: "1 - 2 ngày" },
+  "Lạng Sơn": { fee: 50000, time: "4 - 6 ngày" },
+  "Lào Cai": { fee: 50000, time: "4 - 6 ngày" },
+  "Long An": { fee: 30000, time: "2 - 4 ngày" },
+  "Nam Định": { fee: 45000, time: "3 - 5 ngày" },
+  "Nghệ An": { fee: 35000, time: "3 - 4 ngày" },
+  "Ninh Bình": { fee: 45000, time: "3 - 5 ngày" },
+  "Ninh Thuận": { fee: 25000, time: "2 - 3 ngày" },
+  "Phú Thọ": { fee: 45000, time: "3 - 5 ngày" },
+  "Phú Yên": { fee: 25000, time: "2 - 3 ngày" },
+  "Quảng Bình": { fee: 35000, time: "3 - 4 ngày" },
+  "Quảng Nam": { fee: 25000, time: "2 - 3 ngày" },
+  "Quảng Ngãi": { fee: 25000, time: "2 - 3 ngày" },
+  "Quảng Ninh": { fee: 50000, time: "4 - 6 ngày" },
+  "Quảng Trị": { fee: 30000, time: "3 - 4 ngày" },
+  "Sóc Trăng": { fee: 35000, time: "3 - 4 ngày" },
+  "Sơn La": { fee: 50000, time: "4 - 6 ngày" },
+  "Tây Ninh": { fee: 25000, time: "2 - 3 ngày" },
+  "Thái Bình": { fee: 45000, time: "3 - 5 ngày" },
+  "Thái Nguyên": { fee: 45000, time: "3 - 5 ngày" },
+  "Thanh Hóa": { fee: 40000, time: "3 - 4 ngày" },
+  "Thừa Thiên Huế": { fee: 30000, time: "2 - 3 ngày" },
+  "Tiền Giang": { fee: 30000, time: "2 - 3 ngày" },
+  "Trà Vinh": { fee: 30000, time: "2 - 3 ngày" },
+  "Tuyên Quang": { fee: 50000, time: "4 - 6 ngày" },
+  "Vĩnh Long": { fee: 30000, time: "2 - 3 ngày" },
+  "Vĩnh Phúc": { fee: 45000, time: "3 - 5 ngày" },
+  "Yên Bái": { fee: 50000, time: "4 - 6 ngày" },
+};
+
+const normalizeProvinceName = (name: string): string => {
+  const mapping: { [key: string]: string } = {
+    "Thành phố Hà Nội": "Hà Nội",
+    "Thành phố Hồ Chí Minh": "TP. Hồ Chí Minh",
+    "Thành phố Hải Phòng": "Hải Phòng",
+    "Thành phố Đà Nẵng": "Đà Nẵng",
+    "Thành phố Cần Thơ": "Cần Thơ",
+  };
+  return mapping[name] || name.replace(/^(Tỉnh|Thành phố) /, '');
+};
+
 const CartScreen = () => {
   const router = useRouter();
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
@@ -102,6 +183,7 @@ const CartScreen = () => {
   const [wards, setWards] = useState<Ward[]>([]);
   const [paymentMethod, setPaymentMethod] = useState<'COD' | 'VNPay'>('COD');
   const [isLoading, setIsLoading] = useState(false);
+  const [shippingFee, setShippingFee] = useState<number>(0);
   const getSafeColor = (color: string) => {
     if (!color) return '#000000';
     return color.startsWith('#') ? color : `#${color}`;
@@ -113,9 +195,9 @@ const CartScreen = () => {
     placeholder: string;
     keyboardType?: KeyboardTypeOptions;
   }[] = [
-      { label: 'Tên người nhận', field: 'fullName', placeholder: 'Nhập tên người nhận' },
-      { label: 'Số điện thoại', field: 'phoneNumber', placeholder: 'Nhập số điện thoại', keyboardType: 'numeric' },
-    ];
+    { label: 'Tên người nhận', field: 'fullName', placeholder: 'Nhập tên người nhận' },
+    { label: 'Số điện thoại', field: 'phoneNumber', placeholder: 'Nhập số điện thoại', keyboardType: 'numeric' },
+  ];
 
   useEffect(() => {
     fetchCartData();
@@ -211,6 +293,7 @@ const CartScreen = () => {
       setDistricts(data.districts);
       setWards([]);
       setCheckoutForm(prev => ({ ...prev, district: '', ward: '' }));
+      setShippingFee(0); // Reset shipping fee when province changes
     } catch (error) {
       console.error('Lỗi khi tải danh sách quận huyện:', error);
     }
@@ -424,7 +507,7 @@ const CartScreen = () => {
     }
   };
 
-  const handleApplyPromo = async () => {
+  const handleApplyPromo = async (): Promise<void> => {
     try {
       const result = await apiFetch(
         `${API_BASE_URL}/Voucher/Validate?code=${encodeURIComponent(promoCode)}&cartId=${cartId}`,
@@ -436,31 +519,53 @@ const CartScreen = () => {
         return;
       }
 
+      console.log('API Response:', result);
+      const discountAmount = result.discountAmount || result.DiscountAmount || 0;
       setDiscountApplied(true);
-      setDiscountValue(result.DiscountAmount || 0);
-      Alert.alert('Thành công', result.Message || 'Mã giảm giá đã được áp dụng!');
+      setDiscountValue(discountAmount);
+      console.log('Updated discountValue:', discountAmount);
     } catch (error) {
       Alert.alert('Lỗi', 'Không thể áp dụng mã giảm giá. Vui lòng thử lại');
       console.error('Error applying promo:', error);
     }
   };
 
-  const calculateSubtotal = () => {
-    const productTotal = cartItems.reduce((sum, item) => sum + item.tienSanPham * item.soLuong, 0);
-    const comboTotal = comboItems.reduce((sum, item) => sum + item.gia * item.soLuong, 0);
+  const calculateSubtotal = (): number => {
+    const productTotal: number = cartItems.reduce((sum: number, item: CartItem) => sum + item.tienSanPham * item.soLuong, 0);
+    const comboTotal: number = comboItems.reduce((sum: number, item: ComboItem) => sum + item.gia * item.soLuong, 0);
     return productTotal + comboTotal;
   };
 
-  const calculateDiscount = () => {
-    return discountApplied ? calculateSubtotal() * 0.1 : 0;
+  const calculateDiscount = (): number => {
+    return discountApplied ? (discountValue || 0) : 0;
   };
 
-  const calculateTotal = () => {
-    return calculateSubtotal() - calculateDiscount();
+  const calculateShippingFee = (): number => {
+    const normalizedProvince = normalizeProvinceName(checkoutForm.province);
+    console.log('Normalized Province:', normalizedProvince, 'Shipping Fee:', shippingData[normalizedProvince]?.fee || 0);
+    return checkoutForm.ward && normalizedProvince ? shippingData[normalizedProvince]?.fee || 0 : 0;
+  };
+
+  const calculateVat = (): number => {
+    const subtotal = calculateSubtotal();
+    const discount = calculateDiscount();
+    const shipping = calculateShippingFee();
+    return (subtotal - discount + shipping) * 0.1;
+  };
+
+  const calculateTotal = (): number => {
+    const subtotal = calculateSubtotal();
+    const discount = calculateDiscount();
+    const shipping = calculateShippingFee();
+    const vat = calculateVat();
+    return subtotal - discount + shipping + vat;
   };
 
   const handleCheckoutFormChange = (field: keyof CheckoutForm, value: string) => {
     setCheckoutForm(prev => ({ ...prev, [field]: value }));
+    if (field === 'province' || field === 'ward') {
+      setShippingFee(calculateShippingFee());
+    }
   };
 
   const validateForm = () => {
@@ -508,8 +613,9 @@ const CartScreen = () => {
         DiaChi: [checkoutForm.address, checkoutForm.ward, checkoutForm.district, checkoutForm.province]
           .filter(part => part)
           .join(', '),
-        ShippingFee: 0,
+        ShippingFee: calculateShippingFee(),
         DiscountAmount: calculateDiscount(),
+        VatAmount: calculateVat(),
         FinalAmount: calculateTotal(),
         CouponCode: discountApplied ? promoCode : null,
         NgayDat: new Date().toISOString(),
@@ -561,6 +667,8 @@ const CartScreen = () => {
                 setDiscountApplied(false);
                 setDiscountValue(0);
                 setPromoCode('');
+                setShippingFee(0);
+                setCheckoutForm({ fullName: '', phoneNumber: '', address: '', province: '', district: '', ward: '' });
                 router.push('/(tabs)/products');
               },
             },
@@ -735,13 +843,29 @@ const CartScreen = () => {
               {discountApplied && (
                 <View style={styles.totalContainer}>
                   <Text style={[styles.discountLabel, { color: themeColors.success }]}>
-                    Giảm giá (10%):
+                    Giảm giá (Mã {promoCode}):
                   </Text>
                   <Text style={[styles.discountAmount, { color: themeColors.success }]}>
                     -{formatCurrency(calculateDiscount())} VND
                   </Text>
                 </View>
               )}
+              <View style={styles.totalContainer}>
+                <Text style={[styles.totalLabel, { color: themeColors.textSecondary }]}>
+                  Phí giao hàng:
+                </Text>
+                <Text style={[styles.totalAmount, { color: themeColors.primary }]}>
+                  {formatCurrency(calculateShippingFee())} VND
+                </Text>
+              </View>
+              <View style={styles.totalContainer}>
+                <Text style={[styles.totalLabel, { color: themeColors.textSecondary }]}>
+                  Thuế VAT (10%):
+                </Text>
+                <Text style={[styles.totalAmount, { color: themeColors.primary }]}>
+                  {formatCurrency(calculateVat())} VND
+                </Text>
+              </View>
               <View style={styles.totalContainer}>
                 <Text style={[styles.totalLabel, { color: themeColors.textSecondary }]}>
                   Thành tiền:
@@ -780,12 +904,32 @@ const CartScreen = () => {
                     {formatCurrency(calculateSubtotal())} VND
                   </Text>
                 </View>
+                {discountApplied && (
+                  <View style={styles.summaryRow}>
+                    <Text style={[styles.summaryLabel, { color: themeColors.success }]}>
+                      Giảm giá (Mã {promoCode}):
+                    </Text>
+                    <Text style={[styles.summaryValue, { color: themeColors.success }]}>
+                      -{formatCurrency(calculateDiscount())} VND
+                    </Text>
+                  </View>
+                )}
+                {checkoutForm.ward && (
+                  <View style={styles.summaryRow}>
+                    <Text style={[styles.summaryLabel, { color: themeColors.textSecondary }]}>
+                      Phí giao hàng ({shippingData[normalizeProvinceName(checkoutForm.province)]?.time || 'N/A'})
+                    </Text>
+                    <Text style={[styles.summaryValue, { color: themeColors.textPrimary }]}>
+                      {formatCurrency(calculateShippingFee())} VND
+                    </Text>
+                  </View>
+                )}
                 <View style={styles.summaryRow}>
                   <Text style={[styles.summaryLabel, { color: themeColors.textSecondary }]}>
-                    Phí giao hàng
+                    Thuế VAT (10%):
                   </Text>
                   <Text style={[styles.summaryValue, { color: themeColors.textPrimary }]}>
-                    0 VND
+                    {formatCurrency(calculateVat())} VND
                   </Text>
                 </View>
                 <View style={[styles.summaryRow, { borderTopWidth: 1, borderTopColor: themeColors.border }]}>
@@ -894,7 +1038,7 @@ const CartScreen = () => {
                     style={[styles.input, { borderColor: themeColors.border, color: themeColors.textPrimary }]}
                     value={checkoutForm.address}
                     onChangeText={value => handleCheckoutFormChange('address', value)}
-                    placeholder="Nhâp địa chỉ chi tiết"
+                    placeholder="Nhập địa chỉ chi tiết"
                     placeholderTextColor={themeColors.textSecondary}
                   />
                 </View>
@@ -981,6 +1125,8 @@ const CartScreen = () => {
                               setDiscountApplied(false);
                               setDiscountValue(0);
                               setPromoCode('');
+                              setShippingFee(0);
+                              setCheckoutForm({ fullName: '', phoneNumber: '', address: '', province: '', district: '', ward: '' });
                               router.push('/(tabs)/products');
                             },
                           },

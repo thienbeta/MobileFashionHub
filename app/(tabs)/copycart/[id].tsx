@@ -17,7 +17,7 @@ import { colors } from '../../style/themeColors';
 import * as FileSystem from 'expo-file-system';
 import { apiFetch } from '../../../src/utils/api';
 
-const API_BASE_URL = 'http://192.168.10.32:5261/api';
+const API_BASE_URL = 'http://192.168.10.35:5261/api';
 
 interface CartItem {
   idSanPham: string;

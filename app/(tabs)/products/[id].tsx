@@ -58,7 +58,7 @@ interface Product {
   rating: number;
 }
 
-const API_BASE_URL = 'http://192.168.10.32:5261/api';
+const API_BASE_URL = 'http://192.168.10.35:5261/api';
 
 export default function ProductDetailScreen() {
   const { id } = useLocalSearchParams();

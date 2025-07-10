@@ -29,7 +29,7 @@ import { apiFetch } from '../../src/utils/api';
 import * as Clipboard from 'expo-clipboard';
 import Svg, { Path, Text as SvgText } from 'react-native-svg';
 
-const API_BASE_URL = 'http://192.168.10.32:5261/api';
+const API_BASE_URL = 'http://192.168.10.35:5261/api';
 const { width: screenWidth } = Dimensions.get('window');
 
 interface Voucher {

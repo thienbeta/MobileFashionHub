@@ -21,7 +21,7 @@ import { apiFetch } from '../../src/utils/api';
 import { useTheme } from '../context/theme';
 import { colors } from '../style/themeColors';
 
-const API_BASE_URL = "http://192.168.10.32:5261/api";
+const API_BASE_URL = "http://192.168.10.35:5261/api";
 
 const orderStatuses = {
   pending: { color: "#fbbf24", icon: ClipboardList, label: "Chờ xác nhận" },
