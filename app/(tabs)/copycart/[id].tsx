@@ -17,7 +17,7 @@ import { colors } from '../../style/themeColors';
 import * as FileSystem from 'expo-file-system';
 import { apiFetch } from '../../../src/utils/api';
 
-const API_BASE_URL = 'http://192.168.10.35:5261/api';
+const API_BASE_URL = 'https://ce5e722365ab.ngrok-free.app/api';
 
 interface CartItem {
   idSanPham: string;
@@ -54,7 +54,11 @@ export default function CopyCartScreen() {
   const isDarkMode = theme === 'dark' || (theme === 'system' && Appearance.getColorScheme() === 'dark');
   const themeColors = isDarkMode ? colors.dark : colors.light;
 
-  // Check authentication and get userId from user.json
+  const getSafeColor = (color: string) => {
+    if (!color) return '#000000';
+    return color.startsWith('#') ? color : `#${color}`;
+  };
+
   useEffect(() => {
     let isMounted = true;
 
@@ -119,7 +123,6 @@ export default function CopyCartScreen() {
     };
   }, [router]);
 
-  // Fetch cart data when userId and id are available
   useEffect(() => {
     if (!userId || !id) return;
 
@@ -252,9 +255,22 @@ export default function CopyCartScreen() {
                     <Text style={[styles.itemName, { color: themeColors.textPrimary }]}>
                       {item.tenSanPham}
                     </Text>
-                    <Text style={[styles.itemInfo, { color: themeColors.textSecondary }]}>
-                      Size: {item.kickThuoc} | Color: {item.mauSac}
-                    </Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+                      <Text style={[styles.itemInfo, { color: themeColors.textSecondary }]}>
+                        Kích thước: {item.kickThuoc} | Màu:
+                      </Text>
+                      <View
+                        style={{
+                          width: 14,
+                          height: 14,
+                          borderRadius: 7,
+                          backgroundColor: getSafeColor(item.mauSac),
+                          marginLeft: 6,
+                          borderWidth: 1,
+                          borderColor: themeColors.border,
+                        }}
+                      />
+                    </View>
                     <Text style={[styles.itemPrice, { color: themeColors.primary }]}>
                       {formatCurrency(item.tienSanPham)} VND
                     </Text>
@@ -282,11 +298,12 @@ export default function CopyCartScreen() {
                     <Text style={[styles.itemPrice, { color: themeColors.primary }]}>
                       {formatCurrency(item.gia)} VND
                     </Text>
+                    <Text style={[styles.quantity, { color: themeColors.textPrimary }]}>
+                      Số lượng: {item.soLuong}
+                    </Text>
                   </View>
                   <View style={styles.itemActions}>
-                    <Text style={[styles.quantity, { color: themeColors.textPrimary }]}>
-                      {item.soLuong}
-                    </Text>
+
                     <TouchableOpacity
                       style={[styles.editButton, { borderColor: themeColors.primary }]}
                       onPress={(event) => {

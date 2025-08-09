@@ -17,7 +17,7 @@ import { colors } from '../../style/themeColors';
 import { apiFetch } from '../../../src/utils/api';
 import * as FileSystem from 'expo-file-system';
 
-const API_BASE_URL = 'http://192.168.1.231:5261/api';
+const API_BASE_URL = 'https://ce5e722365ab.ngrok-free.app/api';
 
 interface ComboItem {
   idCombo: number;

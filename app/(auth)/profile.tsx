@@ -10,7 +10,7 @@ import * as FileSystem from 'expo-file-system';
 import axios from 'axios';
 import * as Notifications from 'expo-notifications';
 
-const API_BASE_URL = 'http://192.168.10.35:5261/api';
+const API_BASE_URL = 'https://ce5e722365ab.ngrok-free.app/api';
 
 interface UserData {
   maNguoiDung: string | undefined;

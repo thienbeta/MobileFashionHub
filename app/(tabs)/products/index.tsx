@@ -73,7 +73,7 @@ export default function ProductsScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const API_BASE_URL = 'http://192.168.10.35:5261/api';
+  const API_BASE_URL = 'https://ce5e722365ab.ngrok-free.app/api';
 
   const priceRanges: Record<PriceRangeKey, { min: number; max: number }> = {
     'under-100000': { min: 0, max: 100000 },

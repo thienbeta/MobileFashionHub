@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, memo } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   ScrollView,
   RefreshControl,
   Dimensions,
+  FlatList,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
@@ -27,15 +28,23 @@ import { colors } from '../style/themeColors';
 import * as FileSystem from 'expo-file-system';
 import { apiFetch } from '../../src/utils/api';
 import * as Clipboard from 'expo-clipboard';
+import { TabView, SceneMap, TabBar } from 'react-native-tab-view';
 import Svg, { Path, Text as SvgText } from 'react-native-svg';
 
-const API_BASE_URL = 'http://192.168.10.35:5261/api';
+const API_BASE_URL = 'https://ce5e722365ab.ngrok-free.app/api';
 const { width: screenWidth } = Dimensions.get('window');
+
+interface Coupon {
+  id: number;
+  maNhap: string;
+  trangThai: number;
+  maNguoiDung?: string;
+}
 
 interface Voucher {
   maVoucher: number;
   tenVoucher: string;
-  giaTri: number;
+  giaTri: number | null;
   ngayBatDau: string;
   ngayKetThuc: string;
   hinhAnh?: string;
@@ -44,16 +53,21 @@ interface Voucher {
   soLuong?: number;
   trangThai?: number;
   tyLe?: number;
-  coupons?: { id: number; maNhap: string; trangThai: number }[];
+  loaiVoucher: number;
+  coupons?: Coupon[];
 }
 
 const SEGMENT_COLORS = [
   '#9b87f5', '#b794f6', '#d6bcfa', '#e9d5ff',
-  '# discussione', '#8b5cf6', '#7c3aed', '#6d28d9',
-  '#c4b5fd', '#ddd6fe', '#f3f0ff', '#ede9fe'
+  '#a78bfa', '#8b5cf6', '#7c3aed', '#6d28d9',
+  '#c4b5fd', '#ddd6fe', '#f3f0ff', '#ede9fe',
 ];
 
-export default function VoucherScreen() {
+const SPIN_COOLDOWN = 24 * 60 * 60 * 1000;
+const WHEEL_SIZE = Math.min(screenWidth * 0.8, 320);
+const WHEEL_RADIUS = WHEEL_SIZE / 2;
+
+const VoucherScreen: React.FC = () => {
   const router = useRouter();
   const { theme } = useTheme();
   const isDark = theme === 'dark' || (theme === 'system' && Appearance.getColorScheme() === 'dark');
@@ -66,15 +80,18 @@ export default function VoucherScreen() {
   const [isSpinning, setIsSpinning] = useState(false);
   const [lastSpinTime, setLastSpinTime] = useState<number | null>(null);
   const [timeLeft, setTimeLeft] = useState<number>(0);
-  const [userId, setUserId] = useState<string>('KH001');
+  const [userId, setUserId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [spinCount, setSpinCount] = useState(0);
   const [showWinnerPopup, setShowWinnerPopup] = useState(false);
+  const [index, setIndex] = useState(0);
+  const [scrollPosition, setScrollPosition] = useState(0);
+  const [routes] = useState([
+    { key: 'wheel', title: 'Vòng Quay' },
+    { key: 'list', title: 'Danh Sách Voucher' },
+  ]);
 
-  const SPIN_COOLDOWN = 24 * 60 * 60 * 1000;
-  const WHEEL_SIZE = Math.min(screenWidth * 0.8, 320);
-  const WHEEL_RADIUS = WHEEL_SIZE / 2;
-
+  const scrollViewRef = useRef<ScrollView>(null);
   const spin = useSharedValue(0);
   const popupScale = useSharedValue(0);
 
@@ -103,9 +120,11 @@ export default function VoucherScreen() {
         });
 
         const userData = JSON.parse(fileContent);
-        const userId = userData?.user?.maNguoiDung;
-        if (userId) {
-          setUserId(userId);
+        const maNguoiDung = userData?.user?.maNguoiDung;
+        if (maNguoiDung) {
+          setUserId(maNguoiDung);
+        } else {
+          throw new Error('Không tìm thấy mã người dùng trong user.json');
         }
 
         const ls = await AsyncStorage.getItem('lastSpinTime');
@@ -144,9 +163,15 @@ export default function VoucherScreen() {
     return () => clearInterval(iv);
   }, [lastSpinTime]);
 
+  useEffect(() => {
+    if (scrollViewRef.current && scrollPosition > 0) {
+      scrollViewRef.current.scrollTo({ y: scrollPosition, animated: false });
+    }
+  }, [scrollPosition, vouchers, selectedVoucher, showWinnerPopup]);
+
   const loadVouchers = async () => {
     try {
-      const data: Voucher[] = await apiFetch(`${API_BASE_URL}/Voucher`, 'Vouchers');
+      const data = await apiFetch(`${API_BASE_URL}/Voucher`, 'Vouchers') as Voucher[];
       const now = new Date();
 
       const vouchersWithRate = data
@@ -155,9 +180,10 @@ export default function VoucherScreen() {
           const e = new Date(v.ngayKetThuc);
           return v.trangThai === 0 && s <= now && now <= e;
         })
-        .map((v, index) => ({
+        .map((v) => ({
           ...v,
-          tyLe: getTyLeByValue(v.giaTri)
+          tyLe: getTyLeByValue(v.giaTri ?? 0),
+          giaTri: v.giaTri ?? (v.loaiVoucher === 2 ? 0 : null),
         }));
 
       setVouchers(vouchersWithRate);
@@ -177,15 +203,14 @@ export default function VoucherScreen() {
 
   const calcRemain = (t: number) => Math.max(0, SPIN_COOLDOWN - (Date.now() - t));
 
-  const fmt = (ms: number) => {
+  const formatTime = (ms: number) => {
     const h = Math.floor(ms / 3600000);
     const m = Math.floor((ms % 3600000) / 60000);
     const s = Math.floor((ms % 60000) / 1000);
-    if (h > 0) return `${h}h ${m}p ${s}s`;
-    return `${m}p ${s}s`;
+    return h > 0 ? `${h}h ${m}m ${s}s` : `${m}m ${s}s`;
   };
 
-  const canSpin = () => !isSpinning && timeLeft <= 0;
+  const canSpin = () => !isSpinning && timeLeft <= 0 && !!userId;
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -203,24 +228,33 @@ export default function VoucherScreen() {
     }).format(condition);
   };
 
-  const calculateWinningVoucher = (): Voucher => {
+  const formatVoucherValue = (voucher: Voucher) => {
+    if (voucher.loaiVoucher === 0) return `Giảm ${voucher.giaTri ?? 0}%`;
+    if (voucher.loaiVoucher === 1) return `Giảm ${formatCondition(voucher.giaTri ?? 0)}`;
+    if (voucher.loaiVoucher === 2) return 'Miễn phí vận chuyển';
+    return 'Không xác định';
+  };
+
+  const formatVoucherName = (voucher: Voucher) => {
+    if (voucher.loaiVoucher === 2) return 'Voucher Miễn Phí Vận Chuyển';
+    return voucher.tenVoucher;
+  };
+
+  const calculateWinningVoucher = (): Voucher | null => {
+    if (vouchers.length === 0) return null;
     const totalRate = vouchers.reduce((sum, v) => sum + (v.tyLe || 0), 0);
     const random = Math.random() * totalRate;
-
     let currentRate = 0;
     for (const voucher of vouchers) {
       currentRate += voucher.tyLe || 0;
-      if (random <= currentRate) {
-        return voucher;
-      }
+      if (random <= currentRate) return voucher;
     }
-
-    return vouchers[vouchers.length - 1];
+    return vouchers[vouchers.length - 1] || null;
   };
 
-  const handleSpin = () => {
+  const handleSpin = async () => {
     if (!canSpin()) {
-      return Alert.alert('Chưa thể quay', `Vui lòng chờ ${fmt(timeLeft)}`);
+      return Alert.alert('Chưa thể quay', `Vui lòng chờ ${formatTime(timeLeft)}`);
     }
 
     setIsSpinning(true);
@@ -228,10 +262,15 @@ export default function VoucherScreen() {
     setShowWinnerPopup(false);
 
     const winningVoucher = calculateWinningVoucher();
-    const winningIndex = vouchers.findIndex(v => v.maVoucher === winningVoucher.maVoucher);
+    if (!winningVoucher) {
+      setIsSpinning(false);
+      Alert.alert('Lỗi', 'Không có voucher nào để quay');
+      return;
+    }
+
+    const winningIndex = vouchers.findIndex((v) => v.maVoucher === winningVoucher.maVoucher);
 
     const segmentAngle = 360 / vouchers.length;
-
     const targetAngle = winningIndex * segmentAngle + segmentAngle / 2;
     const spins = 5 + Math.floor(Math.random() * 3);
     const finalAngle = spins * 360 + (360 - targetAngle);
@@ -242,46 +281,58 @@ export default function VoucherScreen() {
         duration: 3000,
         easing: Easing.bezier(0.25, 0.1, 0.25, 1),
       },
-      () => {
-        runOnJS(handleSpinComplete)(winningVoucher);
-      }
+      () => runOnJS(handleSpinComplete)(winningVoucher)
     );
   };
 
   const handleSpinComplete = async (winningVoucher: Voucher) => {
-    setSelectedVoucher(winningVoucher);
-    const now = Date.now();
-    const newSpinCount = spinCount + 1;
+    try {
+      const coupon = winningVoucher.coupons?.find((c) => c.trangThai === 0);
+      if (coupon && userId) {
+        const response = await fetch(`${API_BASE_URL}/Voucher/Coupon/${coupon.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ maNguoiDung: userId }),
+        });
+        if (!response.ok) throw new Error('Không thể lưu coupon');
+      }
 
-    setLastSpinTime(now);
-    setTimeLeft(SPIN_COOLDOWN);
-    setSpinCount(newSpinCount);
+      setSelectedVoucher(winningVoucher);
+      const now = Date.now();
+      const newSpinCount = spinCount + 1;
 
-    await AsyncStorage.setItem('lastSpinTime', now.toString());
-    await AsyncStorage.setItem('spinCount', newSpinCount.toString());
-    await AsyncStorage.setItem('selectedVoucher', JSON.stringify(winningVoucher));
+      setLastSpinTime(now);
+      setTimeLeft(SPIN_COOLDOWN);
+      setSpinCount(newSpinCount);
 
-    setIsSpinning(false);
-    setShowWinnerPopup(true);
+      await AsyncStorage.setItem('lastSpinTime', now.toString());
+      await AsyncStorage.setItem('spinCount', newSpinCount.toString());
+      await AsyncStorage.setItem('selectedVoucher', JSON.stringify(winningVoucher));
 
-    popupScale.value = withTiming(1, {
-      duration: 500,
-      easing: Easing.bezier(0.34, 1.56, 0.64, 1),
-    });
+      setIsSpinning(false);
+      setShowWinnerPopup(true);
 
-    setTimeout(() => {
-      popupScale.value = withTiming(0, {
-        duration: 300,
-        easing: Easing.bezier(0.25, 0.1, 0.25, 1),
-      }, () => {
-        runOnJS(setShowWinnerPopup)(false);
+      popupScale.value = withTiming(1, {
+        duration: 500,
+        easing: Easing.bezier(0.34, 1.56, 0.64, 1),
       });
-    }, 1000);
+
+      setTimeout(() => {
+        popupScale.value = withTiming(0, {
+          duration: 300,
+          easing: Easing.bezier(0.25, 0.1, 0.25, 1),
+        }, () => runOnJS(setShowWinnerPopup)(false));
+      }, 5000);
+    } catch (e: any) {
+      Alert.alert('Lỗi', 'Không thể lưu coupon: ' + e.message);
+      setIsSpinning(false);
+    }
   };
 
-  const handleUseVoucher = async () => {
-    if (selectedVoucher) {
-      await AsyncStorage.setItem('selectedVoucher', JSON.stringify(selectedVoucher));
+  const handleUseVoucher = async (voucher?: Voucher) => {
+    const voucherToUse = voucher || selectedVoucher;
+    if (voucherToUse) {
+      await AsyncStorage.setItem('selectedVoucher', JSON.stringify(voucherToUse));
       router.push('/cart');
     }
   };
@@ -290,9 +341,7 @@ export default function VoucherScreen() {
     popupScale.value = withTiming(0, {
       duration: 300,
       easing: Easing.bezier(0.25, 0.1, 0.25, 1),
-    }, () => {
-      runOnJS(setShowWinnerPopup)(false);
-    });
+    }, () => runOnJS(setShowWinnerPopup)(false));
   };
 
   const onRefresh = async () => {
@@ -321,7 +370,7 @@ export default function VoucherScreen() {
       `M ${WHEEL_RADIUS} ${WHEEL_RADIUS}`,
       `L ${x1} ${y1}`,
       `A ${WHEEL_RADIUS - 10} ${WHEEL_RADIUS - 10} 0 ${largeArcFlag} 1 ${x2} ${y2}`,
-      'Z'
+      'Z',
     ].join(' ');
 
     const textAngle = startAngle + angle / 2 - 90;
@@ -330,8 +379,15 @@ export default function VoucherScreen() {
     const textX = WHEEL_RADIUS + textRadius * Math.cos(textAngleRad);
     const textY = WHEEL_RADIUS + textRadius * Math.sin(textAngleRad);
 
+    const displayText =
+      voucher.loaiVoucher === 2
+        ? 'Miễn phí vận chuyển'
+        : voucher.tenVoucher.length > 10
+        ? voucher.tenVoucher.slice(0, 10) + '...'
+        : voucher.tenVoucher;
+
     return (
-      <View key={voucher.maVoucher}>
+      <View key={`segment-${voucher.maVoucher}-${index}`}>
         <Path
           d={pathData}
           fill={SEGMENT_COLORS[index % SEGMENT_COLORS.length]}
@@ -341,14 +397,14 @@ export default function VoucherScreen() {
         <SvgText
           x={textX}
           y={textY}
-          fontSize="12"
+          fontSize="10"
           fontWeight="bold"
           fill="#FFF"
           textAnchor="middle"
           alignmentBaseline="middle"
           transform={`rotate(${textAngle + 90}, ${textX}, ${textY})`}
         >
-          {voucher.giaTri}%
+          {displayText}
         </SvgText>
       </View>
     );
@@ -360,13 +416,16 @@ export default function VoucherScreen() {
     return (
       <View style={styles.popupOverlay}>
         <Animated.View style={[styles.winnerPopup, { backgroundColor: themeColors.background }, popupStyle]}>
-          <TouchableOpacity style={styles.closeButton} onPress={closePopup}>
+          <TouchableOpacity
+            style={styles.closeButton}
+            onPress={closePopup}
+            accessibilityLabel="Đóng popup"
+            accessibilityHint="Nhấn để đóng thông báo voucher trúng thưởng"
+          >
             <Text style={styles.closeButtonText}>×</Text>
           </TouchableOpacity>
 
-          <Text style={[styles.popupTitle, { color: themeColors.textPrimary }]}>
-            🎉 Chúc mừng!
-          </Text>
+          <Text style={[styles.popupTitle, { color: themeColors.textPrimary }]}>🎉 Chúc mừng!</Text>
 
           {selectedVoucher.hinhAnh && (
             <Image
@@ -376,10 +435,10 @@ export default function VoucherScreen() {
           )}
 
           <Text style={[styles.popupVoucherName, { color: themeColors.textPrimary }]}>
-            {selectedVoucher.tenVoucher}
+            {formatVoucherName(selectedVoucher)}
           </Text>
           <Text style={[styles.popupVoucherValue, { color: '#9b87f5' }]}>
-            Giảm {selectedVoucher.giaTri}% đơn hàng
+            {formatVoucherValue(selectedVoucher)}
           </Text>
 
           {selectedVoucher.moTa && (
@@ -398,43 +457,306 @@ export default function VoucherScreen() {
             </Text>
           )}
 
+          {selectedVoucher.coupons?.find((coupon) => coupon.trangThai === 0) && (
+            <View style={styles.couponContainer}>
+              <View style={[styles.couponCode, { backgroundColor: themeColors.background }]}>
+                <Text style={[styles.couponText, { color: themeColors.textPrimary }]}>
+                  {selectedVoucher.coupons.find((coupon) => coupon.trangThai === 0)?.maNhap}
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={async () => {
+                  const coupon = selectedVoucher.coupons?.find((coupon) => coupon.trangThai === 0);
+                  if (coupon) {
+                    await Clipboard.setStringAsync(coupon.maNhap);
+                    Alert.alert('Đã sao chép', `Mã ${coupon.maNhap} đã được sao chép.`);
+                  }
+                }}
+                style={[styles.copyBtn, { backgroundColor: '#9b87f5' }]}
+                accessibilityLabel="Sao chép mã voucher"
+                accessibilityHint="Nhấn để sao chép mã voucher vào clipboard"
+              >
+                <Text style={styles.copyBtnText}>Sao chép</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
           <View style={styles.popupButtons}>
             <TouchableOpacity
               style={[styles.popupButton, styles.useButton]}
-              onPress={closePopup}
+              onPress={() => handleUseVoucher()}
+              accessibilityLabel="Sử dụng voucher"
+              accessibilityHint="Nhấn để sử dụng voucher ngay"
             >
               <Text style={styles.laterButtonText}>Sử dụng ngay</Text>
             </TouchableOpacity>
-
+            <TouchableOpacity
+              style={[styles.popupButton, styles.laterButton]}
+              onPress={closePopup}
+              accessibilityLabel="Đóng popup"
+              accessibilityHint="Nhấn để đóng popup và sử dụng voucher sau"
+            >
+              <Text style={styles.laterButtonText}>Để sau</Text>
+            </TouchableOpacity>
           </View>
         </Animated.View>
       </View>
     );
   };
 
+  const WheelScene = memo(() => (
+    <ScrollView
+      ref={scrollViewRef}
+      style={{ flex: 1, width: '100%' }}
+      contentContainerStyle={styles.scrollContent}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+      scrollEnabled={true}
+      onScroll={(event) => setScrollPosition(event.nativeEvent.contentOffset.y)}
+      scrollEventThrottle={16}
+    >
+      <View style={styles.header}>
+        <Text style={[styles.title, { color: themeColors.textPrimary }]}>🎡 Vòng Quay May Mắn</Text>
+      </View>
+
+      <View style={styles.wheelContainer}>
+        <TouchableOpacity
+          onPress={handleSpin}
+          disabled={!canSpin()}
+          style={[styles.wheelWrapper, { width: WHEEL_SIZE, height: WHEEL_SIZE, opacity: canSpin() ? 1 : 0.7 }]}
+          accessibilityLabel="Quay vòng quay may mắn"
+          accessibilityHint={canSpin() ? "Nhấn để quay" : "Vòng quay hiện không khả dụng"}
+        >
+          <Animated.View style={[styles.wheel, spinStyle]}>
+            <Svg width={WHEEL_SIZE} height={WHEEL_SIZE}>
+              {vouchers.length > 0 ? (
+                vouchers.map((voucher, index) => renderWheelSegment(voucher, index))
+              ) : (
+                <SvgText x={WHEEL_RADIUS} y={WHEEL_RADIUS} textAnchor="middle" fontSize="14" fill={themeColors.textPrimary}>
+                  Không có voucher
+                </SvgText>
+              )}
+            </Svg>
+          </Animated.View>
+          <View style={styles.pointer}>
+            <View style={styles.pointerTriangle} />
+          </View>
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.controls}>
+        <Button
+          mode="contained"
+          onPress={handleSpin}
+          disabled={!canSpin()}
+          style={[styles.spinBtn, { backgroundColor: canSpin() ? '#9b87f5' : themeColors.textSecondary }]}
+          labelStyle={styles.spinBtnLabel}
+          accessibilityLabel="Quay ngay"
+          accessibilityHint={canSpin() ? "Nhấn để quay vòng quay may mắn" : "Chờ để quay lại"}
+        >
+          {isSpinning
+            ? '🎯 Đang quay...'
+            : timeLeft > 0
+            ? `⏰ Chờ ${formatTime(timeLeft)}`
+            : '🍀 Quay ngay'}
+        </Button>
+      </View>
+
+      {selectedVoucher && !showWinnerPopup && (
+        <View style={[styles.winnerCard, { backgroundColor: themeColors.secondaryBackground }]}>
+          <Text style={[styles.winnerTitle, { color: themeColors.textPrimary }]}>🎉 Voucher đã trúng</Text>
+
+          {selectedVoucher.hinhAnh && (
+            <Image
+              source={{ uri: `data:image/jpeg;base64,${selectedVoucher.hinhAnh}` }}
+              style={styles.winnerImage}
+            />
+          )}
+
+          <View style={styles.winnerInfo}>
+            <Text style={[styles.winnerName, { color: themeColors.textPrimary }]}>
+              {formatVoucherName(selectedVoucher)}
+            </Text>
+            <Text style={[styles.winnerValue, { color: '#9b87f5' }]}>
+              {formatVoucherValue(selectedVoucher)}
+            </Text>
+            {selectedVoucher.moTa && (
+              <Text style={[styles.winnerDesc, { color: themeColors.textSecondary }]}>
+                {selectedVoucher.moTa}
+              </Text>
+            )}
+            <Text style={[styles.expiryText, { color: '#9b87f5' }]}>
+              Hết hạn: {formatDate(selectedVoucher.ngayKetThuc)}
+            </Text>
+            {selectedVoucher.dieuKien && (
+              <Text style={[styles.conditionText, { color: themeColors.textSecondary }]}>
+                Áp dụng cho đơn hàng từ {formatCondition(selectedVoucher.dieuKien)}
+              </Text>
+            )}
+          </View>
+
+          {selectedVoucher.coupons?.find((coupon) => coupon.trangThai === 0) && (
+            <View style={styles.couponContainer}>
+              <View style={[styles.couponCode, { backgroundColor: themeColors.background }]}>
+                <Text style={[styles.couponText, { color: themeColors.textPrimary }]}>
+                  {selectedVoucher.coupons.find((coupon) => coupon.trangThai === 0)?.maNhap}
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={async () => {
+                  const coupon = selectedVoucher.coupons?.find((coupon) => coupon.trangThai === 0);
+                  if (coupon) {
+                    await Clipboard.setStringAsync(coupon.maNhap);
+                    Alert.alert('Đã sao chép', `Mã ${coupon.maNhap} đã được sao chép.`);
+                  }
+                }}
+                style={[styles.copyBtn, { backgroundColor: '#9b87f5' }]}
+                accessibilityLabel="Sao chép mã voucher"
+                accessibilityHint="Nhấn để sao chép mã voucher vào clipboard"
+              >
+                <Text style={styles.copyBtnText}>Sao chép</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          <Button
+            mode="contained"
+            onPress={() => handleUseVoucher()}
+            style={[styles.useBtn, { backgroundColor: '#9b87f5' }]}
+            accessibilityLabel="Sử dụng voucher"
+            accessibilityHint="Nhấn để sử dụng voucher ngay"
+          >
+            🎁 Sử dụng ngay
+          </Button>
+        </View>
+      )}
+    </ScrollView>
+  ));
+
+  const VoucherListScene = memo(() => {
+    const filteredVouchers = vouchers.filter((voucher) =>
+      voucher.coupons?.some((coupon) => coupon.maNguoiDung === userId && coupon.trangThai === 2)
+    );
+
+    const renderVoucherItem = useCallback(
+      ({ item }: { item: Voucher }) => (
+        <View style={[styles.voucherCard, { backgroundColor: themeColors.secondaryBackground }]}>
+          {item.hinhAnh && (
+            <Image
+              source={{ uri: `data:image/jpeg;base64,${item.hinhAnh}` }}
+              style={styles.voucherImage}
+            />
+          )}
+          <View style={styles.voucherInfo}>
+            <Text style={[styles.voucherName, { color: themeColors.textPrimary }]}>{formatVoucherName(item)}</Text>
+            <Text style={[styles.voucherValue, { color: '#9b87f5' }]}>{formatVoucherValue(item)}</Text>
+            {item.moTa && (
+              <Text style={[styles.voucherDesc, { color: themeColors.textSecondary }]}>{item.moTa}</Text>
+            )}
+            <Text style={[styles.expiryText, { color: '#9b87f5' }]}>
+              Hết hạn: {formatDate(item.ngayKetThuc)}
+            </Text>
+            {item.dieuKien && (
+              <Text style={[styles.conditionText, { color: themeColors.textSecondary }]}>
+                Áp dụng cho đơn hàng từ {formatCondition(item.dieuKien)}
+              </Text>
+            )}
+          </View>
+          {item.coupons
+            ?.filter((coupon) => coupon.maNguoiDung === userId && coupon.trangThai === 2)
+            .map((coupon) => (
+              <View key={coupon.id} style={styles.couponContainer}>
+                <View style={[styles.couponCode, { backgroundColor: themeColors.background }]}>
+                  <Text style={[styles.couponText, { color: themeColors.textPrimary }]}>
+                    {coupon.maNhap}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  onPress={async () => {
+                    await Clipboard.setStringAsync(coupon.maNhap);
+                    Alert.alert('Đã sao chép', `Mã ${coupon.maNhap} đã được sao chép.`);
+                  }}
+                  style={[styles.copyBtn, { backgroundColor: '#9b87f5' }]}
+                  accessibilityLabel="Sao chép mã voucher"
+                  accessibilityHint="Nhấn để sao chép mã voucher vào clipboard"
+                >
+                  <Text style={styles.copyBtnText}>Sao chép</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
+          <Button
+            mode="contained"
+            onPress={() => handleUseVoucher(item)}
+            style={[styles.useBtn, { backgroundColor: '#9b87f5' }]}
+            accessibilityLabel="Sử dụng voucher"
+            accessibilityHint="Nhấn để sử dụng voucher ngay"
+          >
+            🎁 Sử dụng ngay
+          </Button>
+        </View>
+      ),
+      [themeColors, userId]
+    );
+
+    return (
+      <View style={{ flex: 1, width: '100%' }}>
+        {filteredVouchers.length === 0 ? (
+          <View style={[styles.emptyContainer, { backgroundColor: themeColors.background }]}>
+            <Text style={[styles.emptyText, { color: themeColors.textPrimary }]}>
+              Chưa có voucher nào.
+            </Text>
+            <Button
+              mode="contained"
+              onPress={onRefresh}
+              style={[styles.retryBtn, { backgroundColor: '#9b87f5' }]}
+              accessibilityLabel="Tải lại danh sách voucher"
+              accessibilityHint="Nhấn để tải lại danh sách voucher"
+            >
+              Tải lại
+            </Button>
+          </View>
+        ) : (
+          <FlatList
+            data={filteredVouchers}
+            renderItem={renderVoucherItem}
+            keyExtractor={(item) => item.maVoucher.toString()}
+            contentContainerStyle={styles.voucherListContent}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+            initialNumToRender={10}
+            windowSize={5}
+          />
+        )}
+      </View>
+    );
+  });
+
+  const renderScene = SceneMap({
+    wheel: WheelScene,
+    list: VoucherListScene,
+  });
+
   if (loading) {
     return (
       <View style={[styles.container, { backgroundColor: themeColors.background }]}>
         <ActivityIndicator size="large" color="#9b87f5" />
-        <Text style={[styles.loadingText, { color: themeColors.textSecondary }]}>
-          Đang tải voucher...
-        </Text>
+        <Text style={[styles.loadingText, { color: themeColors.textSecondary }]}>Đang tải...</Text>
       </View>
     );
   }
 
-  if (error || vouchers.length === 0) {
+  if (error || !userId) {
     return (
       <View style={[styles.container, { backgroundColor: themeColors.background }]}>
         <Text style={[styles.errorText, { color: themeColors.textPrimary }]}>
-          {error || 'Chưa có voucher nào.'}
+          {error || 'Vui lòng đăng nhập để tiếp tục.'}
         </Text>
         <Button
           mode="contained"
-          onPress={() => loadVouchers()}
+          onPress={() => router.push('/(auth)/login')}
           style={[styles.retryBtn, { backgroundColor: '#9b87f5' }]}
+          accessibilityLabel="Đăng nhập"
+          accessibilityHint="Nhấn để chuyển đến màn hình đăng nhập"
         >
-          Thử lại
+          Đăng nhập
         </Button>
       </View>
     );
@@ -442,151 +764,41 @@ export default function VoucherScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: themeColors.background }]}>
-      <ScrollView
-        style={{ flex: 1, width: '100%' }}
-        contentContainerStyle={styles.scrollContent}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
-      >
-        <View style={styles.header}>
-          <Text style={[styles.title, { color: themeColors.textPrimary }]}>
-            🎡 Vòng Quay May Mắn
-          </Text>
-        </View>
-
-        <View style={styles.wheelContainer}>
-          <TouchableOpacity
-            onPress={handleSpin}
-            disabled={!canSpin()}
-            style={[
-              styles.wheelWrapper,
-              {
-                width: WHEEL_SIZE,
-                height: WHEEL_SIZE,
-                opacity: canSpin() ? 1 : 0.7,
-              },
-            ]}
-          >
-            <Animated.View style={[styles.wheel, spinStyle]}>
-              <Svg width={WHEEL_SIZE} height={WHEEL_SIZE}>
-                {vouchers.map((voucher, index) => renderWheelSegment(voucher, index))}
-              </Svg>
-            </Animated.View>
-
-            <View style={styles.pointer}>
-              <View style={styles.pointerTriangle} />
-            </View>
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.controls}>
-          <Button
-            mode="contained"
-            onPress={handleSpin}
-            disabled={!canSpin()}
-            style={[
-              styles.spinBtn,
-              {
-                backgroundColor: canSpin() ? '#9b87f5' : themeColors.textSecondary,
-              },
-            ]}
-            labelStyle={styles.spinBtnLabel}
-          >
-            {isSpinning
-              ? '🎯 Đang quay...'
-              : timeLeft > 0
-                ? `⏰ Chờ ${fmt(timeLeft)}`
-                : '🍀 Quay ngay'}
-          </Button>
-        </View>
-
-        {selectedVoucher && !showWinnerPopup && (
-          <View style={[styles.winnerCard, { backgroundColor: themeColors.secondaryBackground }]}>
-            <Text style={[styles.winnerTitle, { color: themeColors.textPrimary }]}>
-              🎉 Voucher đã trúng
-            </Text>
-
-            {selectedVoucher.hinhAnh && (
-              <Image
-                source={{ uri: `data:image/jpeg;base64,${selectedVoucher.hinhAnh}` }}
-                style={styles.winnerImage}
-              />
+      <TabView
+        navigationState={{ index, routes }}
+        renderScene={renderScene}
+        onIndexChange={setIndex}
+        initialLayout={{ width: screenWidth }}
+        renderTabBar={(props) => (
+          <TabBar
+            {...props}
+            style={{ backgroundColor: themeColors.background }}
+            indicatorStyle={{ backgroundColor: '#9b87f5' }}
+            renderLabel={({ route, focused }) => (
+              <Text style={{ color: focused ? '#9b87f5' : themeColors.textPrimary, fontWeight: 'bold' }}>
+                {route.title}
+              </Text>
             )}
-
-            <View style={styles.winnerInfo}>
-              <Text style={[styles.winnerName, { color: themeColors.textPrimary }]}>
-                {selectedVoucher.tenVoucher}
-              </Text>
-              <Text style={[styles.winnerValue, { color: '#9b87f5' }]}>
-                Giảm {selectedVoucher.giaTri}% đơn hàng
-              </Text>
-
-              {selectedVoucher.moTa && (
-                <Text style={[styles.winnerDesc, { color: themeColors.textSecondary }]}>
-                  {selectedVoucher.moTa}
-                </Text>
-              )}
-
-              <Text style={[styles.expiryText, { color: '#9b87f5' }]}>
-                Hết hạn: {formatDate(selectedVoucher.ngayKetThuc)}
-              </Text>
-
-              {selectedVoucher.dieuKien && (
-                <Text style={[styles.conditionText, { color: themeColors.textSecondary }]}>
-                  Áp dụng cho đơn hàng từ {formatCondition(selectedVoucher.dieuKien)}
-                </Text>
-              )}
-            </View>
-
-            {selectedVoucher.coupons
-              ?.filter((coupon) => coupon.trangThai === 0)
-              .slice(0, 2)
-              .map((coupon, index) => (
-                <View key={index} style={styles.couponContainer}>
-                  <View style={[styles.couponCode, { backgroundColor: themeColors.background }]}>
-                    <Text style={[styles.couponText, { color: themeColors.textPrimary }]}>
-                      {coupon.maNhap}
-                    </Text>
-                  </View>
-                  <TouchableOpacity
-                    onPress={async () => {
-                      await Clipboard.setStringAsync(coupon.maNhap);
-                      Alert.alert('Đã sao chép', `Mã ${coupon.maNhap} đã được sao chép.`);
-                    }}
-                    style={[styles.copyBtn, { backgroundColor: '#9b87f5' }]}
-                  >
-                    <Text style={styles.copyBtnText}>Sao chép</Text>
-                  </TouchableOpacity>
-                </View>
-              ))}
-
-            <Button
-              mode="contained"
-              onPress={handleUseVoucher}
-              style={[styles.useBtn, { backgroundColor: '#9b87f5' }]}
-            >
-              🎁 Sử dụng ngay
-            </Button>
-          </View>
+          />
         )}
-      </ScrollView>
-
+      />
       {renderWinnerPopup()}
     </View>
   );
-}
+};
+
+export default VoucherScreen;
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     paddingTop: 40,
-    alignItems: 'center',
   },
   scrollContent: {
     alignItems: 'center',
     paddingHorizontal: 20,
     paddingBottom: 30,
+    flexGrow: 1,
   },
   header: {
     alignItems: 'center',
@@ -596,10 +808,6 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: 'bold',
     marginBottom: 5,
-  },
-  subtitle: {
-    fontSize: 14,
-    textAlign: 'center',
   },
   wheelContainer: {
     alignItems: 'center',
@@ -659,10 +867,6 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     paddingVertical: 5,
   },
-  cooldownText: {
-    fontSize: 12,
-    textAlign: 'center',
-  },
   winnerCard: {
     width: '100%',
     maxWidth: 360,
@@ -676,6 +880,7 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     borderWidth: 2,
     borderColor: '#9b87f5',
+    marginBottom: 20,
   },
   winnerTitle: {
     fontSize: 24,
@@ -865,6 +1070,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginHorizontal: 5,
   },
+  useButton: {
+    backgroundColor: '#9b87f5',
+  },
   laterButton: {
     backgroundColor: '#6b7280',
   },
@@ -873,7 +1081,65 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: 'bold',
   },
-  useButton: {
-    backgroundColor: '#9b87f5',
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  emptyText: {
+    fontSize: 16,
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  voucherListContent: {
+    paddingHorizontal: 20,
+    paddingBottom: 30,
+    flexGrow: 1,
+  },
+  voucherCard: {
+    width: '100%',
+    maxWidth: 360,
+    alignItems: 'center',
+    padding: 20,
+    borderRadius: 16,
+    elevation: 8,
+    shadowColor: '#9b87f5',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    borderWidth: 2,
+    borderColor: '#9b87f5',
+    marginVertical: 10,
+    alignSelf: 'center',
+  },
+  voucherImage: {
+    width: 120,
+    height: 120,
+    resizeMode: 'contain',
+    marginBottom: 15,
+    borderRadius: 10,
+  },
+  voucherInfo: {
+    alignItems: 'center',
+    marginBottom: 15,
+  },
+  voucherName: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: 5,
+  },
+  voucherValue: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: 5,
+  },
+  voucherDesc: {
+    fontSize: 14,
+    textAlign: 'center',
+    fontStyle: 'italic',
+    marginBottom: 5,
   },
 });

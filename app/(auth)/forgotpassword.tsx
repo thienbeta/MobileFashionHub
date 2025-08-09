@@ -8,7 +8,7 @@ import { colors } from '../style/themeColors';
 import axios from 'axios';
 import * as Notifications from 'expo-notifications';
 
-const API_BASE_URL = 'http://192.168.10.35:5261/api/XacThuc';
+const API_BASE_URL = 'https://ce5e722365ab.ngrok-free.app/api/XacThuc';
 
 export default function ForgotPasswordScreen() {
   const router = useRouter();

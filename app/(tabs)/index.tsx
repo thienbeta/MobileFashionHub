@@ -15,7 +15,7 @@ import { colors } from "../style/themeColors";
 import { useRouter } from "expo-router";
 import axios from "axios";
 
-const API_BASE_URL = "http://192.168.10.35:5261/api";
+const API_BASE_URL = "https://ce5e722365ab.ngrok-free.app/api";
 
 interface CategoryFromAPI {
   maLoaiSanPham: number;

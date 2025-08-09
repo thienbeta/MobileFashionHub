@@ -12,7 +12,7 @@ import {
   TextInput,
   Switch,
 } from 'react-native';
-import { ChevronRight, ChevronLeft, Edit, Trash2, CheckCircle } from 'lucide-react-native';
+import { ChevronLeft, Edit, Trash2, CheckCircle, Eye } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { useTheme } from '../context/theme';
 import { Appearance } from 'react-native';
@@ -23,7 +23,7 @@ import axios from 'axios';
 import Select from 'react-native-picker-select';
 import { Ionicons } from '@expo/vector-icons';
 
-const API_BASE_URL = 'http://192.168.10.35:5261/api';
+const API_BASE_URL = 'https://ce5e722365ab.ngrok-free.app/api';
 
 interface Province { ProvinceID: number; ProvinceName: string; }
 interface District { DistrictID: number; DistrictName: string; }
@@ -33,6 +33,7 @@ interface Address {
   maNguoiDung: string;
   hoTen: string;
   sdt: string;
+  moTa?: string;
   diaChi: string;
   phuongXa: string;
   quanHuyen: string;
@@ -47,73 +48,17 @@ interface FormErrors {
   phuongXa?: string;
   diaChi?: string;
 }
-type Mode = 'add' | 'edit';
-
-const shippingData: { [key: string]: { fee: number; time: string } } = {
-  "Hà Nội": { fee: 40000, time: "3 - 5 ngày" },
-  "TP. Hồ Chí Minh": { fee: 20000, time: "2 - 3 ngày" },
-  "Hải Phòng": { fee: 45000, time: "3 - 5 ngày" },
-  "Đà Nẵng": { fee: 30000, time: "2 - 3 ngày" },
-  "Cần Thơ": { fee: 30000, time: "2 - 4 ngày" },
-  "An Giang": { fee: 35000, time: "3 - 4 ngày" },
-  "Bà Rịa - Vũng Tàu": { fee: 25000, time: "2 - 3 ngày" },
-  "Bắc Giang": { fee: 45000, time: "3 - 5 ngày" },
-  "Bắc Kạn": { fee: 50000, time: "4 - 6 ngày" },
-  "Bạc Liêu": { fee: 35000, time: "3 - 4 ngày" },
-  "Bắc Ninh": { fee: 40000, time: "3 - 5 ngày" },
-  "Bến Tre": { fee: 30000, time: "2 - 4 ngày" },
-  "Bình Định": { fee: 25000, time: "2 - 3 ngày" },
-  "Bình Dương": { fee: 20000, time: "2 - 3 ngày" },
-  "Bình Phước": { fee: 20000, time: "2 - 3 ngày" },
-  "Bình Thuận": { fee: 25000, time: "2 - 3 ngày" },
-  "Cà Mau": { fee: 35000, time: "3 - 5 ngày" },
-  "Cao Bằng": { fee: 50000, time: "4 - 6 ngày" },
-  "Đắk Lắk": { fee: 0, time: "Nội tỉnh" },
-  "Đắk Nông": { fee: 15000, time: "1 - 2 ngày" },
-  "Điện Biên": { fee: 50000, time: "4 - 6 ngày" },
-  "Đồng Nai": { fee: 20000, time: "2 - 3 ngày" },
-  "Đồng Tháp": { fee: 30000, time: "3 - 4 ngày" },
-  "Gia Lai": { fee: 15000, time: "1 - 2 ngày" },
-  "Hà Giang": { fee: 50000, time: "4 - 6 ngày" },
-  "Hà Nam": { fee: 45000, time: "3 - 5 ngày" },
-  "Hà Tĩnh": { fee: 35000, time: "3 - 4 ngày" },
-  "Hải Dương": { fee: 45000, time: "3 - 5 ngày" },
-  "Hậu Giang": { fee: 35000, time: "3 - 4 ngày" },
-  "Hòa Bình": { fee: 45000, time: "3 - 5 ngày" },
-  "Hưng Yên": { fee: 40000, time: "3 - 5 ngày" },
-  "Khánh Hòa": { fee: 25000, time: "2 - 3 ngày" },
-  "Kiên Giang": { fee: 35000, time: "3 - 4 ngày" },
-  "Kon Tum": { fee: 15000, time: "1 - 2 ngày" },
-  "Lai Châu": { fee: 50000, time: "4 - 6 ngày" },
-  "Lâm Đồng": { fee: 20000, time: "1 - 2 ngày" },
-  "Lạng Sơn": { fee: 50000, time: "4 - 6 ngày" },
-  "Lào Cai": { fee: 50000, time: "4 - 6 ngày" },
-  "Long An": { fee: 30000, time: "2 - 4 ngày" },
-  "Nam Định": { fee: 45000, time: "3 - 5 ngày" },
-  "Nghệ An": { fee: 35000, time: "3 - 4 ngày" },
-  "Ninh Bình": { fee: 45000, time: "3 - 5 ngày" },
-  "Ninh Thuận": { fee: 25000, time: "2 - 3 ngày" },
-  "Phú Thọ": { fee: 45000, time: "3 - 5 ngày" },
-  "Phú Yên": { fee: 25000, time: "2 - 3 ngày" },
-  "Quảng Bình": { fee: 35000, time: "3 - 4 ngày" },
-  "Quảng Nam": { fee: 25000, time: "2 - 3 ngày" },
-  "Quảng Ngãi": { fee: 25000, time: "2 - 3 ngày" },
-  "Quảng Ninh": { fee: 50000, time: "4 - 6 ngày" },
-  "Quảng Trị": { fee: 30000, time: "3 - 4 ngày" },
-  "Sóc Trăng": { fee: 35000, time: "3 - 4 ngày" },
-  "Sơn La": { fee: 50000, time: "4 - 6 ngày" },
-  "Tây Ninh": { fee: 25000, time: "2 - 3 ngày" },
-  "Thái Bình": { fee: 45000, time: "3 - 5 ngày" },
-  "Thái Nguyên": { fee: 45000, time: "3 - 5 ngày" },
-  "Thanh Hóa": { fee: 40000, time: "3 - 4 ngày" },
-  "Thừa Thiên Huế": { fee: 30000, time: "2 - 3 ngày" },
-  "Tiền Giang": { fee: 30000, time: "2 - 3 ngày" },
-  "Trà Vinh": { fee: 30000, time: "2 - 3 ngày" },
-  "Tuyên Quang": { fee: 50000, time: "4 - 6 ngày" },
-  "Vĩnh Long": { fee: 30000, time: "2 - 3 ngày" },
-  "Vĩnh Phúc": { fee: 45000, time: "3 - 5 ngày" },
-  "Yên Bái": { fee: 50000, time: "4 - 6 ngày" },
-};
+interface LeadTimeResponse {
+  leadtime: number;
+  leadtime_order: {
+    from_estimate_date: string;
+    to_estimate_date: string;
+  };
+}
+interface ShippingFeeResponse {
+  total: number;
+}
+type Mode = 'add' | 'edit' | 'view';
 
 export default function AddressScreen() {
   const router = useRouter();
@@ -135,9 +80,18 @@ export default function AddressScreen() {
   const [isLoadingDistricts, setIsLoadingDistricts] = useState(false);
   const [isLoadingWards, setIsLoadingWards] = useState(false);
   const [formErrors, setFormErrors] = useState<FormErrors>({});
+  const [shippingFee, setShippingFee] = useState<number | null>(null);
+  const [isLoadingShippingFee, setIsLoadingShippingFee] = useState(false);
+  const [leadTime, setLeadTime] = useState<LeadTimeResponse | null>(null);
+  const [isLoadingLeadTime, setIsLoadingLeadTime] = useState(false);
 
   const isDarkMode = theme === 'dark' || (theme === 'system' && Appearance.getColorScheme() === 'dark');
   const themeColors = isDarkMode ? colors.dark : colors.light;
+
+  const getAuthHeaders = async () => {
+    const token = await AsyncStorage.getItem('token');
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
 
   const loadUserData = useCallback(async () => {
     try {
@@ -178,7 +132,9 @@ export default function AddressScreen() {
   const fetchProvinces = async () => {
     setIsLoadingProvinces(true);
     try {
-      const response = await axios.get(`${API_BASE_URL}/GHN/provinces`);
+      const response = await axios.get(`${API_BASE_URL}/GHN/provinces`, {
+        headers: await getAuthHeaders(),
+      });
       setProvinces(response.data.map((item: any) => ({
         ProvinceID: item.provinceID,
         ProvinceName: item.provinceName,
@@ -193,7 +149,9 @@ export default function AddressScreen() {
   const fetchDistricts = async (provinceId: number) => {
     setIsLoadingDistricts(true);
     try {
-      const response = await axios.get(`${API_BASE_URL}/GHN/districts/${provinceId}`);
+      const response = await axios.get(`${API_BASE_URL}/GHN/districts/${provinceId}`, {
+        headers: await getAuthHeaders(),
+      });
       setDistricts(response.data.map((item: any) => ({
         DistrictID: item.districtID,
         DistrictName: item.districtName,
@@ -201,6 +159,8 @@ export default function AddressScreen() {
       setWards([]);
       setSelectedDistrict(null);
       setSelectedWard(null);
+      setShippingFee(null);
+      setLeadTime(null);
     } catch (error: any) {
       Alert.alert('Lỗi', error.response?.data?.message || 'Không thể lấy danh sách quận/huyện');
     } finally {
@@ -211,16 +171,79 @@ export default function AddressScreen() {
   const fetchWards = async (districtId: number) => {
     setIsLoadingWards(true);
     try {
-      const response = await axios.get(`${API_BASE_URL}/GHN/wards/${districtId}`);
+      const response = await axios.get(`${API_BASE_URL}/GHN/wards/${districtId}`, {
+        headers: await getAuthHeaders(),
+      });
       setWards(response.data.map((item: any) => ({
         WardCode: item.wardCode,
         WardName: item.wardName,
       })));
       setSelectedWard(null);
+      setShippingFee(null);
+      setLeadTime(null);
     } catch (error: any) {
       Alert.alert('Lỗi', error.response?.data?.message || 'Không thể lấy danh sách phường/xã');
     } finally {
       setIsLoadingWards(false);
+    }
+  };
+
+  const fetchShippingFee = async () => {
+    if (!selectedDistrict?.DistrictID || !selectedWard?.WardCode) {
+      setShippingFee(null);
+      return;
+    }
+    setIsLoadingShippingFee(true);
+    try {
+      const request = {
+        service_type_id: 2,
+        from_district_id: 1552,
+        from_ward_code: '400103',
+        to_district_id: selectedDistrict.DistrictID,
+        to_ward_code: selectedWard.WardCode,
+        length: 35,
+        width: 25,
+        height: 10,
+        weight: 1000,
+        insurance_value: 0,
+        coupon: null,
+        items: [],
+      };
+      const response = await axios.post<ShippingFeeResponse>(`${API_BASE_URL}/GHN/shipping-fee`, request, {
+        headers: await getAuthHeaders(),
+      });
+      setShippingFee(response.data.total);
+    } catch (error: any) {
+      Alert.alert('Lỗi', error.response?.data?.message || 'Không thể tải phí giao hàng');
+      setShippingFee(null);
+    } finally {
+      setIsLoadingShippingFee(false);
+    }
+  };
+
+  const fetchLeadTime = async () => {
+    if (!selectedDistrict?.DistrictID || !selectedWard?.WardCode) {
+      setLeadTime(null);
+      return;
+    }
+    setIsLoadingLeadTime(true);
+    try {
+      const request = {
+        from_district_id: 1552,
+        from_ward_code: '400103',
+        to_district_id: selectedDistrict.DistrictID,
+        to_ward_code: selectedWard.WardCode,
+        service_id: 53320,
+      };
+      const response = await axios.post<LeadTimeResponse>(`${API_BASE_URL}/GHN/leadtime`, request, {
+        headers: await getAuthHeaders(),
+      });
+      setLeadTime(response.data);
+    } catch (error: any) {
+      Alert.alert('Lỗi', error.response?.data?.message || 'Không thể tải thời gian giao hàng');
+      setLeadTime(null);
+    } finally {
+      setIsLoadingLeadTime(false);
     }
   };
 
@@ -231,14 +254,63 @@ export default function AddressScreen() {
     }
     setIsLoading(true);
     try {
-      const response = await axios.get(`${API_BASE_URL}/DanhSachDiaChi/maNguoiDung/${userId}`);
-      setAddresses(response.data.sort((a: Address, b: Address) => b.trangThai - a.trangThai));
+      const response = await axios.get(`${API_BASE_URL}/DanhSachDiaChi/maNguoiDung/${userId}`, {
+        headers: await getAuthHeaders(),
+      });
+      const fetchedAddresses = response.data.sort((a: Address, b: Address) => b.trangThai - a.trangThai);
+      const updatedAddresses = await Promise.all(
+        fetchedAddresses.map(async (addr: Address) => {
+          const province = provinces.find((p) => p.ProvinceName === addr.tinh);
+          if (!province) return addr;
+
+          const districtResponse = await axios.get(`${API_BASE_URL}/GHN/districts/${province.ProvinceID}`, {
+            headers: await getAuthHeaders(),
+          });
+          const districts = districtResponse.data.map((item: any) => ({
+            DistrictID: item.districtID,
+            DistrictName: item.districtName,
+          }));
+          const district = districts.find((d: District) => d.DistrictName === addr.quanHuyen);
+          if (!district) return addr;
+
+          const wardResponse = await axios.get(`${API_BASE_URL}/GHN/wards/${district.DistrictID}`, {
+            headers: await getAuthHeaders(),
+          });
+          const wards = wardResponse.data.map((item: any) => ({
+            WardCode: item.wardCode,
+            WardName: item.wardName,
+          }));
+          const ward = wards.find((w: Ward) => w.WardName === addr.phuongXa);
+          if (!ward) return addr;
+
+          const shippingRequest = {
+            service_type_id: 2,
+            from_district_id: 1552,
+            from_ward_code: '400103',
+            to_district_id: district.DistrictID,
+            to_ward_code: ward.WardCode,
+            length: 35,
+            width: 25,
+            height: 10,
+            weight: 1000,
+            insurance_value: 0,
+            coupon: null,
+            items: [],
+          };
+          const shippingResponse = await axios.post<ShippingFeeResponse>(`${API_BASE_URL}/GHN/shipping-fee`, shippingRequest, {
+            headers: await getAuthHeaders(),
+          });
+
+          return { ...addr, moTa: shippingResponse.data.total.toString() };
+        })
+      );
+      setAddresses(updatedAddresses);
     } catch (error: any) {
       Alert.alert('Lỗi', error.response?.data?.message || 'Không thể tải danh sách địa chỉ');
     } finally {
       setIsLoading(false);
     }
-  }, [userId]);
+  }, [userId, provinces]);
 
   useEffect(() => {
     loadUserData();
@@ -257,6 +329,13 @@ export default function AddressScreen() {
     if (selectedDistrict?.DistrictID) fetchWards(selectedDistrict.DistrictID);
   }, [selectedDistrict]);
 
+  useEffect(() => {
+    if (selectedDistrict && selectedWard) {
+      fetchShippingFee();
+      fetchLeadTime();
+    }
+  }, [selectedDistrict, selectedWard]);
+
   const validateForm = (formData: Partial<Address>): FormErrors => {
     const errors: FormErrors = {};
     if (!formData.hoTen || formData.hoTen.trim().length < 5) errors.hoTen = 'Họ tên phải có ít nhất 5 ký tự';
@@ -274,6 +353,7 @@ export default function AddressScreen() {
       tinh: selectedProvince?.ProvinceName,
       quanHuyen: selectedDistrict?.DistrictName,
       phuongXa: selectedWard?.WardName,
+      moTa: shippingFee ? shippingFee.toString() : undefined,
     };
 
     const errors = validateForm(fullFormData);
@@ -295,18 +375,18 @@ export default function AddressScreen() {
           ...fullFormData,
           maNguoiDung: userId,
           trangThai: 1,
-        });
+        }, { headers: await getAuthHeaders() });
         Alert.alert('Thành công', 'Đã thêm địa chỉ mới');
-      } else {
+      } else if (formMode === 'edit') {
         await axios.put(`${API_BASE_URL}/DanhSachDiaChi/${currentAddress.maDiaChi}`, {
           ...fullFormData,
           maDiaChi: currentAddress.maDiaChi,
           maNguoiDung: userId,
           trangThai: currentAddress.trangThai,
-        });
+        }, { headers: await getAuthHeaders() });
         Alert.alert('Thành công', 'Đã cập nhật địa chỉ');
       }
-      fetchAddresses();
+      await fetchAddresses();
       setModalVisible(false);
       setFormErrors({});
     } catch (error: any) {
@@ -321,7 +401,9 @@ export default function AddressScreen() {
         text: 'Xác nhận',
         onPress: async () => {
           try {
-            await axios.delete(`${API_BASE_URL}/DanhSachDiaChi/${maDiaChi}`);
+            await axios.delete(`${API_BASE_URL}/DanhSachDiaChi/${maDiaChi}`, {
+              headers: await getAuthHeaders(),
+            });
             setAddresses(addresses.filter((addr) => addr.maDiaChi !== maDiaChi));
             Alert.alert('Thành công', 'Đã xóa địa chỉ');
           } catch (error: any) {
@@ -339,6 +421,7 @@ export default function AddressScreen() {
         text: 'Xác nhận',
         onPress: async () => {
           try {
+            const headers = await getAuthHeaders();
             await Promise.all(
               addresses.map((addr) =>
                 axios.put(
@@ -346,12 +429,14 @@ export default function AddressScreen() {
                   {
                     ...addr,
                     trangThai: addr.maDiaChi === maDiaChi ? 1 : 0,
-                  }
+                  },
+                  { headers }
                 )
               )
             );
+
             Alert.alert('Thành công', 'Đã chọn địa chỉ mặc định');
-            fetchAddresses();
+            await fetchAddresses();
           } catch (error: any) {
             Alert.alert('Lỗi', error.response?.data?.message || 'Không thể chọn địa chỉ');
           }
@@ -360,7 +445,7 @@ export default function AddressScreen() {
     ]);
   };
 
-  const openAddForm = () => {
+  const openAddForm = async () => {
     setFormMode('add');
     setCurrentAddress({ trangThai: 1 });
     setSelectedProvince(null);
@@ -369,7 +454,10 @@ export default function AddressScreen() {
     setDistricts([]);
     setWards([]);
     setFormErrors({});
+    setShippingFee(null);
+    setLeadTime(null);
     setModalVisible(true);
+    await fetchAddresses(); // Giả định đây là dòng gây lỗi TS1308 tại dòng 432
   };
 
   const openEditForm = async (address: Address) => {
@@ -381,7 +469,9 @@ export default function AddressScreen() {
     if (province) {
       try {
         setIsLoadingDistricts(true);
-        const districtResponse = await axios.get(`${API_BASE_URL}/GHN/districts/${province.ProvinceID}`);
+        const districtResponse = await axios.get(`${API_BASE_URL}/GHN/districts/${province.ProvinceID}`, {
+          headers: await getAuthHeaders(),
+        });
         const newDistricts = districtResponse.data.map((item: any) => ({
           DistrictID: item.districtID,
           DistrictName: item.districtName,
@@ -392,7 +482,9 @@ export default function AddressScreen() {
 
         if (district) {
           setIsLoadingWards(true);
-          const wardResponse = await axios.get(`${API_BASE_URL}/GHN/wards/${district.DistrictID}`);
+          const wardResponse = await axios.get(`${API_BASE_URL}/GHN/wards/${district.DistrictID}`, {
+            headers: await getAuthHeaders(),
+          });
           const newWards = wardResponse.data.map((item: any) => ({
             WardCode: item.wardCode,
             WardName: item.wardName,
@@ -400,6 +492,10 @@ export default function AddressScreen() {
           setWards(newWards);
           const ward = newWards.find((w: Ward) => w.WardName === address.phuongXa);
           setSelectedWard(ward || null);
+          if (ward) {
+            await fetchShippingFee();
+            await fetchLeadTime();
+          }
         }
       } catch (error: any) {
         Alert.alert('Lỗi', error.response?.data?.message || 'Không thể tải dữ liệu khu vực');
@@ -410,6 +506,67 @@ export default function AddressScreen() {
     }
     setFormErrors({});
     setModalVisible(true);
+  };
+
+  const openViewForm = async (address: Address) => {
+    setFormMode('view');
+    setCurrentAddress(address);
+    const province = provinces.find((p) => p.ProvinceName === address.tinh);
+    setSelectedProvince(province || null);
+
+    if (province) {
+      try {
+        setIsLoadingDistricts(true);
+        const districtResponse = await axios.get(`${API_BASE_URL}/GHN/districts/${province.ProvinceID}`, {
+          headers: await getAuthHeaders(),
+        });
+        const newDistricts = districtResponse.data.map((item: any) => ({
+          DistrictID: item.districtID,
+          DistrictName: item.districtName,
+        }));
+        setDistricts(newDistricts);
+        const district = newDistricts.find((d: District) => d.DistrictName === address.quanHuyen);
+        setSelectedDistrict(district || null);
+
+        if (district) {
+          setIsLoadingWards(true);
+          const wardResponse = await axios.get(`${API_BASE_URL}/GHN/wards/${district.DistrictID}`, {
+            headers: await getAuthHeaders(),
+          });
+          const newWards = wardResponse.data.map((item: any) => ({
+            WardCode: item.wardCode,
+            WardName: item.wardName,
+          }));
+          setWards(newWards);
+          const ward = newWards.find((w: Ward) => w.WardName === address.phuongXa);
+          setSelectedWard(ward || null);
+          if (ward) {
+            await fetchShippingFee();
+            await fetchLeadTime();
+          }
+        }
+      } catch (error: any) {
+        Alert.alert('Lỗi', error.response?.data?.message || 'Không thể tải dữ liệu khu vực');
+      } finally {
+        setIsLoadingDistricts(false);
+        setIsLoadingWards(false);
+      }
+    }
+    setFormErrors({});
+    setModalVisible(true);
+  };
+
+  const formatDate = (dateString: string) => {
+    const deliveryDate = new Date(dateString);
+    const day = deliveryDate.getDate();
+    const month = deliveryDate.getMonth() + 1;
+    const year = deliveryDate.getFullYear();
+    return `Ngày ${day}, tháng ${month}, năm ${year} nhận hàng`;
+  };
+
+  const restrictToDigits = (text: string) => {
+    const digitsOnly = text.replace(/[^0-9]/g, '');
+    setCurrentAddress({ ...currentAddress, sdt: digitsOnly });
   };
 
   const onRefresh = useCallback(async () => {
@@ -458,12 +615,9 @@ export default function AddressScreen() {
               <Text style={[styles.addressName, { color: themeColors.textPrimary }]}>{item.hoTen}</Text>
               <Text style={[styles.addressDetail, { color: themeColors.textSecondary }]}>{item.sdt}</Text>
               <Text style={[styles.addressDetail, { color: themeColors.textSecondary }]}>{item.diaChi}, {item.phuongXa}, {item.quanHuyen}, {item.tinh}</Text>
-              {shippingData[item.tinh] && (
-                <View style={styles.shippingInfo}>
-                  <Text style={[styles.shippingText, { color: themeColors.textSecondary }]}>Phí giao hàng: {shippingData[item.tinh].fee.toLocaleString()} VND</Text>
-                  <Text style={[styles.shippingText, { color: themeColors.textSecondary }]}>Thời gian: {shippingData[item.tinh].time}</Text>
-                </View>
-              )}
+              <View style={styles.shippingInfo}>
+                <Text style={[styles.shippingText, { color: themeColors.textSecondary }]}>Phí giao hàng: {item.moTa ? `${parseInt(item.moTa).toLocaleString()} VND` : 'Đang tải...'}</Text>
+              </View>
             </View>
             <View style={styles.addressActions}>
               <Switch
@@ -472,6 +626,9 @@ export default function AddressScreen() {
                 trackColor={{ false: '#CBD5E0', true: themeColors.primary }}
                 thumbColor="#fff"
               />
+              <TouchableOpacity onPress={() => openViewForm(item)}>
+                <Eye size={20} color={themeColors.iconPrimary} />
+              </TouchableOpacity>
               <TouchableOpacity onPress={() => openEditForm(item)}>
                 <Edit size={20} color={themeColors.iconPrimary} />
               </TouchableOpacity>
@@ -491,10 +648,16 @@ export default function AddressScreen() {
               <TouchableOpacity onPress={() => setModalVisible(false)}>
                 <ChevronLeft size={24} color={themeColors.iconPrimary} />
               </TouchableOpacity>
-              <Text style={[styles.modalTitle, { color: themeColors.textPrimary }]}>{formMode === 'add' ? 'Thêm địa chỉ' : 'Sửa địa chỉ'}</Text>
-              <TouchableOpacity onPress={handleSubmit}>
-                <CheckCircle size={24} color={themeColors.primary} />
-              </TouchableOpacity>
+              <Text style={[styles.modalTitle, { color: themeColors.textPrimary }]}>
+                {formMode === 'add' ? 'Thêm địa chỉ' : formMode === 'edit' ? 'Sửa địa chỉ' : 'Xem địa chỉ'}
+              </Text>
+              {formMode !== 'view' ? (
+                <TouchableOpacity onPress={handleSubmit}>
+                  <CheckCircle size={24} color={themeColors.primary} />
+                </TouchableOpacity>
+              ) : (
+                <View style={{ width: 24 }} />
+              )}
             </View>
 
             <TextInput
@@ -503,6 +666,7 @@ export default function AddressScreen() {
               placeholderTextColor={themeColors.textSecondary}
               value={currentAddress.hoTen || ''}
               onChangeText={(text) => setCurrentAddress({ ...currentAddress, hoTen: text })}
+              editable={formMode !== 'view'}
             />
             {formErrors.hoTen && <Text style={styles.errorText}>{formErrors.hoTen}</Text>}
 
@@ -511,9 +675,10 @@ export default function AddressScreen() {
               placeholder="Số điện thoại"
               placeholderTextColor={themeColors.textSecondary}
               value={currentAddress.sdt || ''}
-              onChangeText={(text) => setCurrentAddress({ ...currentAddress, sdt: text })}
+              onChangeText={restrictToDigits}
               keyboardType="numeric"
               maxLength={10}
+              editable={formMode !== 'view'}
             />
             {formErrors.sdt && <Text style={styles.errorText}>{formErrors.sdt}</Text>}
 
@@ -528,7 +693,7 @@ export default function AddressScreen() {
                 const province = provinces.find((p) => p.ProvinceID === value) || null;
                 setSelectedProvince(province);
               }}
-              disabled={isLoadingProvinces}
+              disabled={isLoadingProvinces || formMode === 'view'}
             />
             {formErrors.tinh && <Text style={styles.errorText}>{formErrors.tinh}</Text>}
 
@@ -543,7 +708,7 @@ export default function AddressScreen() {
                 const district = districts.find((d) => d.DistrictID === value) || null;
                 setSelectedDistrict(district);
               }}
-              disabled={!selectedProvince || isLoadingDistricts}
+              disabled={!selectedProvince || isLoadingDistricts || formMode === 'view'}
             />
             {formErrors.quanHuyen && <Text style={styles.errorText}>{formErrors.quanHuyen}</Text>}
 
@@ -558,7 +723,7 @@ export default function AddressScreen() {
                 const ward = wards.find((w) => w.WardCode === value) || null;
                 setSelectedWard(ward);
               }}
-              disabled={!selectedDistrict || isLoadingWards}
+              disabled={!selectedDistrict || isLoadingWards || formMode === 'view'}
             />
             {formErrors.phuongXa && <Text style={styles.errorText}>{formErrors.phuongXa}</Text>}
 
@@ -568,8 +733,20 @@ export default function AddressScreen() {
               placeholderTextColor={themeColors.textSecondary}
               value={currentAddress.diaChi || ''}
               onChangeText={(text) => setCurrentAddress({ ...currentAddress, diaChi: text })}
+              editable={formMode !== 'view'}
             />
             {formErrors.diaChi && <Text style={styles.errorText}>{formErrors.diaChi}</Text>}
+
+            {selectedWard && (
+              <View style={styles.shippingInfo}>
+                <Text style={[styles.shippingText, { color: themeColors.textSecondary }]}>
+                  Phí giao hàng dự kiến: {isLoadingShippingFee ? 'Đang tải...' : shippingFee !== null ? `${shippingFee.toLocaleString()} VND` : 'Không thể tải phí giao hàng'}
+                </Text>
+                <Text style={[styles.shippingText, { color: themeColors.textSecondary }]}>
+                  Thời gian giao hàng dự kiến: {isLoadingLeadTime ? 'Đang tải...' : leadTime ? formatDate(leadTime.leadtime_order.to_estimate_date) : 'Không thể tải thời gian giao hàng'}
+                </Text>
+              </View>
+            )}
           </View>
         </View>
       </Modal>
