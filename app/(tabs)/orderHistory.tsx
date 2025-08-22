@@ -16,13 +16,13 @@ import {
 } from "react-native";
 import { Picker } from "@react-native-picker/picker";
 import { useRouter } from "expo-router";
-import { ClipboardList, Package, Truck, CheckCircle, Eye, ChevronDown, ChevronUp, X } from "lucide-react-native";
+import { ClipboardList, Package, Truck, CheckCircle, Eye, ChevronDown, ChevronUp, X, Filter } from "lucide-react-native";
 import * as FileSystem from 'expo-file-system';
 import { apiFetch } from '../../src/utils/api';
 import { useTheme } from '../context/theme';
 import { colors } from '../style/themeColors';
 
-const API_BASE_URL = "https://ce5e722365ab.ngrok-free.app/api";
+const API_BASE_URL = "https://bicacuatho.azurewebsites.net/api";
 
 const orderStatuses = {
   pending: { color: "#fbbf24", icon: ClipboardList, label: "Chờ xác nhận" },
@@ -40,18 +40,45 @@ interface Order {
   status: OrderStatus;
   total: number;
   tongTien: number;
-  items: Array<{
-    id: number;
-    name: string;
-    quantity: number;
-    price: number;
-    image: string;
-  }>;
+  discountAmount: number;
+  shippingFee: number;
+  items: Array<Item>;
   tenNguoiNhan: string;
   hinhThucThanhToan: string;
   lyDoHuy?: string;
   sdt: string;
   paymentStatusText?: string;
+}
+
+interface Item {
+  id: number;
+  name: string;
+  quantity: number;
+  price: number;
+  image: string;
+  isCombo?: boolean;
+  combo?: {
+    tenCombo: string;
+    giaCombo: number;
+    sanPhamsTrongCombo: Array<SubItem>;
+  };
+  itemTotal: number;
+  color?: string;
+  size?: string;
+  colorHex?: string;
+  maSanPham?: string;
+}
+
+interface SubItem {
+  tenSanPham: string;
+  soLuong: number;
+  gia: number;
+  thanhTien: number;
+  maSanPham: string;
+  mauSac: string;
+  kichThuoc: string;
+  mauSacHex: string;
+  hinhAnh: string;
 }
 
 interface PaginationInfo {
@@ -74,7 +101,198 @@ interface Notification {
   duration?: number;
 }
 
-// Notification Component
+const OrderFilter = ({ activeTab, filterStatus, setFilterStatus, searchQuery, setSearchQuery, trackingSearch, setTrackingSearch, originalOrders, setOrders, setTrackingOrders, themeColors }: any) => {
+  const [showFilter, setShowFilter] = useState(false);
+
+  const searchOrdersLocally = (query: string) => {
+    if (!query.trim()) {
+      setOrders(originalOrders);
+      return;
+    }
+    const filtered = originalOrders.filter((order: Order) =>
+      order.id.toLowerCase().includes(query.toLowerCase()) ||
+      order.tenNguoiNhan.toLowerCase().includes(query.toLowerCase())
+    );
+    setOrders(filtered);
+  };
+
+  const searchTrackingOrdersLocally = (query: string) => {
+    if (!query.trim()) {
+      setTrackingOrders(originalOrders);
+      return;
+    }
+    const filtered = originalOrders.filter((order: Order) =>
+      order.id.toLowerCase().includes(query.toLowerCase()) ||
+      order.tenNguoiNhan.toLowerCase().includes(query.toLowerCase())
+    );
+    setTrackingOrders(filtered);
+  };
+
+  return (
+    <View>
+      {activeTab === "all" && (
+        <View style={{ alignItems: "flex-end", marginBottom: 10 }}>
+          <TouchableOpacity
+            onPress={() => setShowFilter(!showFilter)}
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              borderWidth: 1,
+              borderColor: themeColors.primary,
+              paddingHorizontal: 12,
+              paddingVertical: 6,
+              borderRadius: 8,
+              backgroundColor: themeColors.card,
+            }}
+            activeOpacity={0.7}
+          >
+            <Filter size={20} color={themeColors.primary} />
+            <Text
+              style={{
+                marginLeft: 5,
+                color: themeColors.primary,
+                fontSize: 16,
+                fontWeight: "500",
+              }}
+            >
+              Lọc
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {showFilter && activeTab === "all" && (
+        <View style={[styles.filterContainer, { backgroundColor: themeColors.card }]}>
+          <View style={styles.filterRow}>
+            <Text style={[styles.filterLabel, { color: themeColors.textPrimary } as TextStyle]}>
+              Đơn hàng của bạn
+            </Text>
+            <View
+              style={[
+                styles.pickerContainer,
+                {
+                  borderColor: themeColors.border,
+                  borderWidth: 1,
+                  borderRadius: 8,
+                  overflow: "hidden",
+                },
+              ]}
+            >
+              <Picker
+                selectedValue={filterStatus}
+                onValueChange={(itemValue) => setFilterStatus(itemValue)}
+                style={{
+                  height: 50,
+                  fontSize: 16,
+                  color: themeColors.textPrimary,
+                }}
+                itemStyle={{
+                  fontSize: 16,
+                  color: themeColors.textPrimary,
+                }}
+              >
+                <Picker.Item label="Tất cả" value="all" />
+                <Picker.Item label="Chờ xác nhận" value="pending" />
+                <Picker.Item label="Đang xử lý" value="processing" />
+                <Picker.Item label="Đang giao hàng" value="shipping" />
+                <Picker.Item label="Đã hoàn thành" value="completed" />
+                <Picker.Item label="Đã hủy" value="canceled" />
+              </Picker>
+            </View>
+
+          </View>
+          <View style={styles.searchContainer}>
+            <Text style={[styles.searchLabel, { color: themeColors.textPrimary } as TextStyle]}>
+              Tra cứu đơn hàng
+            </Text>
+            <View style={styles.searchRow}>
+              <View style={[styles.searchInputContainer, { borderColor: themeColors.border }]}>
+                <TextInput
+                  style={[styles.searchInput, { color: themeColors.textPrimary } as TextStyle]}
+                  placeholder="Tìm kiếm..."
+                  placeholderTextColor={themeColors.textSecondary}
+                  value={activeTab === "tracking" ? trackingSearch : searchQuery}
+                  onChangeText={(text) => {
+                    if (activeTab === "tracking") {
+                      setTrackingSearch(text);
+                      searchTrackingOrdersLocally(text);
+                    } else {
+                      setSearchQuery(text);
+                      searchOrdersLocally(text);
+                    }
+                  }}
+                />
+                {(activeTab === "tracking" ? trackingSearch : searchQuery).length > 0 && (
+                  <TouchableOpacity
+                    style={styles.clearSearchButton}
+                    onPress={() => {
+                      if (activeTab === "tracking") {
+                        setTrackingSearch("");
+                        setTrackingOrders(originalOrders);
+                      } else {
+                        setSearchQuery("");
+                        setOrders(originalOrders);
+                      }
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <X color={themeColors.textSecondary} size={16} />
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+          </View>
+        </View>
+      )}
+      {activeTab !== "all" && (
+        <View style={[styles.filterContainer, { backgroundColor: themeColors.card }]}>
+          <View style={styles.searchContainer}>
+            <Text style={[styles.searchLabel, { color: themeColors.textPrimary } as TextStyle]}>
+              {activeTab === "tracking" ? "Tra cứu đơn hàng theo dõi" : "Tra cứu đơn hàng"}
+            </Text>
+            <View style={styles.searchRow}>
+              <View style={[styles.searchInputContainer, { borderColor: themeColors.border }]}>
+                <TextInput
+                  style={[styles.searchInput, { color: themeColors.textPrimary } as TextStyle]}
+                  placeholder={activeTab === "tracking" ? "Tìm kiếm..." : "Tìm kiếm theo..."}
+                  placeholderTextColor={themeColors.textSecondary}
+                  value={activeTab === "tracking" ? trackingSearch : searchQuery}
+                  onChangeText={(text) => {
+                    if (activeTab === "tracking") {
+                      setTrackingSearch(text);
+                      searchTrackingOrdersLocally(text);
+                    } else {
+                      setSearchQuery(text);
+                      searchOrdersLocally(text);
+                    }
+                  }}
+                />
+                {(activeTab === "tracking" ? trackingSearch : searchQuery).length > 0 && (
+                  <TouchableOpacity
+                    style={styles.clearSearchButton}
+                    onPress={() => {
+                      if (activeTab === "tracking") {
+                        setTrackingSearch("");
+                        setTrackingOrders(originalOrders);
+                      } else {
+                        setSearchQuery("");
+                        setOrders(originalOrders);
+                      }
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <X color={themeColors.textSecondary} size={16} />
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+          </View>
+        </View>
+      )}
+    </View>
+  );
+};
+
 const NotificationComponent = ({
   notification,
   onClose,
@@ -82,6 +300,10 @@ const NotificationComponent = ({
   notification: Notification | null;
   onClose: () => void;
 }) => {
+  const { theme } = useTheme();
+  const isDarkMode = theme === 'dark' || (theme === 'system' && Appearance.getColorScheme() === 'dark');
+  const themeColors = isDarkMode ? colors.dark : colors.light;
+
   useEffect(() => {
     if (notification) {
       const duration = notification.duration || (notification.type === 'success' ? 3000 : 5000);
@@ -89,10 +311,6 @@ const NotificationComponent = ({
       return () => clearTimeout(timer);
     }
   }, [notification, onClose]);
-
-  const { theme } = useTheme();
-  const isDarkMode = theme === 'dark' || (theme === 'system' && Appearance.getColorScheme() === 'dark');
-  const themeColors = isDarkMode ? colors.dark : colors.light;
 
   if (!notification) return null;
 
@@ -116,7 +334,6 @@ const NotificationComponent = ({
   );
 };
 
-// OrderTrackingTimeline Component
 const OrderTrackingTimeline = ({ order }: { order: Order }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const { theme } = useTheme();
@@ -127,9 +344,7 @@ const OrderTrackingTimeline = ({ order }: { order: Order }) => {
   const checkToken = async () => {
     const fileUri = FileSystem.documentDirectory + 'user.json';
     const fileInfo = await FileSystem.getInfoAsync(fileUri);
-    if (!fileInfo.exists) {
-      return false;
-    }
+    if (!fileInfo.exists) return false;
     const fileContent = await FileSystem.readAsStringAsync(fileUri, { encoding: FileSystem.EncodingType.UTF8 });
     const userData = JSON.parse(fileContent);
     return !!userData?.token;
@@ -189,7 +404,7 @@ const OrderTrackingTimeline = ({ order }: { order: Order }) => {
       textColor: '#991b1b',
       dotColor: '#ef4444',
       borderColor: '#fca5a5',
-      description: 'Đơn hàng đã bị hủy',
+      description: order.lyDoHuy ? `Đơn hàng đã bị hủy: ${order.lyDoHuy}` : 'Đơn hàng đã bị hủy',
     },
   ];
 
@@ -324,6 +539,16 @@ const OrderTrackingTimeline = ({ order }: { order: Order }) => {
                 {order.paymentStatusText || (order.hinhThucThanhToan === 'VNPay' ? 'Đã thanh toán' : order.status === 'completed' ? 'Đã thanh toán' : 'Chưa thanh toán')}
               </Text>
             </View>
+            {order.status === 'canceled' && order.lyDoHuy && (
+              <View style={styles.trackingInfoRow}>
+                <Text style={[styles.trackingInfoLabel, { color: themeColors.textSecondary } as TextStyle]}>
+                  Lý do hủy:
+                </Text>
+                <Text style={[styles.trackingInfoValue, { color: themeColors.textPrimary } as TextStyle]}>
+                  {order.lyDoHuy}
+                </Text>
+              </View>
+            )}
           </View>
         </View>
       )}
@@ -331,9 +556,9 @@ const OrderTrackingTimeline = ({ order }: { order: Order }) => {
   );
 };
 
-// OrderItem Component
 const OrderItem = ({ order, onCancel }: OrderItemProps) => {
   const [isExpanded, setIsExpanded] = useState(false);
+  const [expandedComboIds, setExpandedComboIds] = useState<Set<number>>(new Set());
   const statusInfo = orderStatuses[order.status] || orderStatuses.pending;
   const StatusIcon = statusInfo.icon;
   const { theme } = useTheme();
@@ -344,9 +569,7 @@ const OrderItem = ({ order, onCancel }: OrderItemProps) => {
   const checkToken = async () => {
     const fileUri = FileSystem.documentDirectory + 'user.json';
     const fileInfo = await FileSystem.getInfoAsync(fileUri);
-    if (!fileInfo.exists) {
-      return false;
-    }
+    if (!fileInfo.exists) return false;
     const fileContent = await FileSystem.readAsStringAsync(fileUri, { encoding: FileSystem.EncodingType.UTF8 });
     const userData = JSON.parse(fileContent);
     return !!userData?.token;
@@ -360,6 +583,18 @@ const OrderItem = ({ order, onCancel }: OrderItemProps) => {
       return;
     }
     setIsExpanded(!isExpanded);
+  };
+
+  const toggleCombo = (id: number) => {
+    setExpandedComboIds((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(id)) {
+        newSet.delete(id);
+      } else {
+        newSet.add(id);
+      }
+      return newSet;
+    });
   };
 
   const formatCurrency = (value: number) => {
@@ -398,7 +633,7 @@ const OrderItem = ({ order, onCancel }: OrderItemProps) => {
       </View>
       <View style={styles.orderFooter}>
         <View style={styles.orderTotal}>
-          <Text style={[styles.orderTotalText, { color: themeColors.textPrimary } as TextStyle]}>
+          <Text style={[styles.orderTotalText, { color: themeColors.primary } as TextStyle]}>
             {formatCurrency(order.tongTien || 0)}
           </Text>
           <Text style={[styles.orderItemsCount, { color: themeColors.textSecondary } as TextStyle]}>
@@ -438,38 +673,179 @@ const OrderItem = ({ order, onCancel }: OrderItemProps) => {
       </View>
       {isExpanded && (
         <View style={[styles.orderDetailsExpanded, { borderTopColor: themeColors.border }]}>
+          {order.status === 'canceled' && order.lyDoHuy && (
+            <Text style={[styles.orderInfo, { color: themeColors.error } as TextStyle]}>
+              Lý do hủy: {order.lyDoHuy}
+            </Text>
+          )}
           <View style={styles.orderItems}>
-            {(order.items || []).map((item) => (
-              <View key={item.id} style={styles.orderItem}>
-                <View style={styles.orderItemImageContainer}>
-                  <Image
-                    source={{ uri: item.image.startsWith('data:image') ? item.image : `data:image/jpeg;base64,${item.image}` }}
-                    style={styles.orderItemImage}
-                    resizeMode="contain"
-                    onError={() => console.log(`Không tải được hình ảnh cho ${item.name}: ${item.image}`)}
-                  />
-                </View>
-                <View style={styles.orderItemInfo}>
-                  <Text style={[styles.orderItemName, { color: themeColors.textPrimary } as TextStyle]}>
-                    {item.name || "N/A"}
-                  </Text>
-                  <Text style={[styles.orderItemQuantity, { color: themeColors.textSecondary } as TextStyle]}>
-                    Số lượng: {item.quantity || 0} x {formatCurrency(item.price || 0)}
-                  </Text>
-                </View>
-                <Text style={[styles.orderItemTotal, { color: themeColors.textPrimary } as TextStyle]}>
-                  {formatCurrency((item.quantity || 0) * (item.price || 0))}
-                </Text>
-              </View>
-            ))}
+            {(order.items || []).map((item) => {
+              if (!item.isCombo) {
+                return (
+                  <View key={item.id} style={styles.orderItem}>
+                    <View style={styles.orderItemImageContainer}>
+                      <Image
+                        source={{ uri: item.image.startsWith('data:image') ? item.image : item.image.startsWith('http') ? item.image : `data:image/jpeg;base64,${item.image}` }}
+                        style={styles.orderItemImage}
+                        resizeMode="contain"
+                      />
+                    </View>
+                    <View style={styles.orderItemInfo}>
+                      <Text style={[styles.orderItemName, { color: themeColors.textPrimary } as TextStyle]}>
+                        {item.name || "N/A"}
+                      </Text>
+                      <Text style={[styles.orderItemQuantity, { color: themeColors.textSecondary } as TextStyle]}>
+                        Số lượng: {item.quantity}
+                      </Text>
+                      <View style={styles.colorContainer}>
+                        <Text style={[styles.orderItemQuantity, { color: themeColors.textSecondary } as TextStyle]}>
+                          Màu sắc: {item.color || 'N/A'}
+                        </Text>
+                        {item.colorHex && (
+                          <View style={[styles.colorCircle, { backgroundColor: item.colorHex }]} />
+                        )}
+                      </View>
+                      <Text style={[styles.orderItemQuantity, { color: themeColors.textSecondary } as TextStyle]}>
+                        Kích thước: {item.size || 'N/A'}
+                      </Text>
+                    </View>
+                    <Text style={[styles.orderItemTotal, { color: themeColors.textPrimary } as TextStyle]}>
+                      {formatCurrency(item.itemTotal || 0)}
+                    </Text>
+                  </View>
+                );
+              } else {
+                return (
+                  <View key={item.id} style={styles.orderItem}>
+                    <View style={styles.orderItemImageContainer}>
+                      <Image
+                        source={{ uri: item.image.startsWith('data:image') ? item.image : item.image.startsWith('http') ? item.image : `data:image/jpeg;base64,${item.image}` }}
+                        style={styles.orderItemImage}
+                        resizeMode="contain"
+                      />
+                    </View>
+                    <View style={styles.orderItemInfo}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        <Text style={[styles.orderItemName, { color: themeColors.textPrimary } as TextStyle]}>
+                          {item.name || "N/A"} (Combo)
+                        </Text>
+                        <Package color={themeColors.textPrimary} size={16} style={{ marginLeft: 4 }} />
+                      </View>
+                      <Text style={[styles.orderItemQuantity, { color: themeColors.textSecondary } as TextStyle]}>
+                        Số lượng: {item.quantity}
+                      </Text>
+                      <TouchableOpacity
+                        style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}
+                        onPress={() => toggleCombo(item.id)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={[styles.orderItemQuantity, { color: themeColors.primary } as TextStyle]}>
+                          Chi tiết
+                        </Text>
+                        {expandedComboIds.has(item.id) ? (
+                          <ChevronUp color={themeColors.primary} size={14} style={{ marginLeft: 4 }} />
+                        ) : (
+                          <ChevronDown color={themeColors.primary} size={14} style={{ marginLeft: 4 }} />
+                        )}
+                      </TouchableOpacity>
+                      {expandedComboIds.has(item.id) && (
+                        <View style={styles.subItemsContainer}>
+                          {item.combo?.sanPhamsTrongCombo.map((sub, subIndex) => (
+                            <View key={subIndex} style={styles.subItem}>
+                              <View style={styles.subItemImageContainer}>
+                                <Image
+                                  source={{
+                                    uri: sub.hinhAnh.startsWith("data:image")
+                                      ? sub.hinhAnh
+                                      : sub.hinhAnh.startsWith("http")
+                                        ? sub.hinhAnh
+                                        : `data:image/jpeg;base64,${sub.hinhAnh}`,
+                                  }}
+                                  style={styles.subItemImage}
+                                  resizeMode="contain"
+                                />
+                              </View>
+
+                              <View style={styles.orderItemInfo}>
+                                <Text
+                                  style={[
+                                    styles.orderItemName,
+                                    { color: themeColors.textPrimary, fontSize: 12 } as TextStyle,
+                                  ]}
+                                >
+                                  {sub.tenSanPham}
+                                </Text>
+
+                                <View style={styles.colorContainer}>
+                                  <Text
+                                    style={[
+                                      styles.orderItemQuantity,
+                                      { color: themeColors.textSecondary, fontSize: 10 } as TextStyle,
+                                    ]}
+                                  >
+                                    Màu sắc: {sub.mauSac || "N/A"}
+                                  </Text>
+                                  {sub.mauSacHex && (
+                                    <View
+                                      style={[
+                                        styles.colorCircle,
+                                        {
+                                          backgroundColor: sub.mauSacHex,
+                                          width: 12,
+                                          height: 12,
+                                          marginHorizontal: 4,
+                                        },
+                                      ]}
+                                    />
+                                  )}
+                                </View>
+
+                                <Text
+                                  style={[
+                                    styles.orderItemQuantity,
+                                    { color: themeColors.textSecondary, fontSize: 10 } as TextStyle,
+                                  ]}
+                                >
+                                  Kích thước: {sub.kichThuoc || "N/A"}
+                                </Text>
+                              </View>
+                            </View>
+                          ))}
+                        </View>
+
+                      )}
+                    </View>
+                    <Text style={[styles.orderItemTotal, { color: themeColors.textPrimary } as TextStyle]}>
+                      {formatCurrency(item.itemTotal || 0)}
+                    </Text>
+                  </View>
+                );
+              }
+            })}
           </View>
           <View style={[styles.orderSummary, { borderTopColor: themeColors.border }]}>
             <View style={styles.orderSummaryRow}>
               <Text style={[styles.orderSummaryLabel, { color: themeColors.textSecondary } as TextStyle]}>
-                Tổng trước giảm giá:
+                Tổng sản phẩm:
               </Text>
               <Text style={[styles.orderSummaryValue, { color: themeColors.textPrimary } as TextStyle]}>
                 {formatCurrency(order.total || 0)}
+              </Text>
+            </View>
+            <View style={styles.orderSummaryRow}>
+              <Text style={[styles.orderSummaryLabel, { color: themeColors.textSecondary } as TextStyle]}>
+                Giảm giá:
+              </Text>
+              <Text style={[styles.orderSummaryValue, { color: themeColors.textPrimary } as TextStyle]}>
+                {formatCurrency(order.discountAmount || 0)}
+              </Text>
+            </View>
+            <View style={styles.orderSummaryRow}>
+              <Text style={[styles.orderSummaryLabel, { color: themeColors.textSecondary } as TextStyle]}>
+                Phí giao hàng:
+              </Text>
+              <Text style={[styles.orderSummaryValue, { color: themeColors.textPrimary } as TextStyle]}>
+                {formatCurrency(order.shippingFee || 0)}
               </Text>
             </View>
             <View style={styles.orderSummaryRow}>
@@ -487,7 +863,6 @@ const OrderItem = ({ order, onCancel }: OrderItemProps) => {
   );
 };
 
-// OrderHistory Component
 const OrderHistory = () => {
   const router = useRouter();
   const [filterStatus, setFilterStatus] = useState("all");
@@ -514,6 +889,8 @@ const OrderHistory = () => {
   const { theme } = useTheme();
   const isDarkMode = theme === 'dark' || (theme === 'system' && Appearance.getColorScheme() === 'dark');
   const themeColors = isDarkMode ? colors.dark : colors.light;
+
+  const defaultImage = "https://tronhouse.com/assets/data/editor/source/meo-chup-anh-san-pham-quan-ao-de-kinh-doanh-online-hieu-qua/chup-anh-quan-ao-2.jpg";
 
   const cancelReasonsSuggestions = [
     "Đổi ý không muốn mua nữa",
@@ -571,33 +948,150 @@ const OrderHistory = () => {
         return;
       }
 
-      const mappedOrders = rawOrders.map((rawOrder: any) => {
-        let formattedDate = "";
-        if (rawOrder.ngayDat && typeof rawOrder.ngayDat === "string") {
-          const date = new Date(rawOrder.ngayDat);
-          formattedDate = date.toLocaleDateString('vi-VN');
-        }
+      const mappedOrders: Order[] = await Promise.all(
+        rawOrders.map(async (rawOrder: any) => {
+          let formattedDate = "N/A";
+          if (rawOrder.ngayDat) {
+            formattedDate = rawOrder.ngayDat;
+          }
 
-        return {
-          id: rawOrder.maDonHang.toString(),
-          date: formattedDate,
-          status: mapStatus(rawOrder.trangThaiDonHang),
-          total: rawOrder.tongTien,
-          tongTien: rawOrder.thongTinDonHang?.thanhTienCuoiCung || rawOrder.tongTien,
-          items: rawOrder.sanPhams.map((item: any) => ({
-            id: item.maChiTietDh,
-            name: item.tenSanPham,
-            quantity: item.soLuong,
-            price: item.gia,
-            image: item.hinhAnh || "https://tronhouse.com/assets/data/editor/source/meo-chup-anh-san-pham-quan-ao-de-kinh-doanh-online-hieu-qua/chup-anh-quan-ao-2.jpg",
-          })),
-          tenNguoiNhan: rawOrder.tenNguoiNhan,
-          hinhThucThanhToan: rawOrder.hinhThucThanhToan,
-          sdt: rawOrder.thongTinNguoiDung?.sdt,
-          lyDoHuy: rawOrder.lyDoHuy,
-          paymentStatusText: rawOrder.paymentStatusText || (rawOrder.hinhThucThanhToan === 'VNPay' ? 'Đã thanh toán' : rawOrder.trangThaiDonHang === 3 ? 'Đã thanh toán' : 'Chưa thanh toán'),
-        };
-      });
+          const items = await Promise.all(
+            rawOrder.sanPhams.map(async (item: any) => {
+              let image = item.hinhAnh || defaultImage;
+              let comboData = item.combo;
+
+              if (!item.laCombo && item.maSanPham) {
+                const [baseId, colorHex, size] = item.maSanPham.split('_') || [];
+                if (baseId && colorHex && size) {
+                  const cleanColor = colorHex.replace('#', '').toUpperCase();
+                  try {
+                    const productData = await apiFetch(
+                      `${API_BASE_URL}/SanPham/SanPhamByIDSorted?id=${baseId}`,
+                      'Product',
+                      { headers: { Authorization: `Bearer ${token}` } }
+                    );
+                    if (Array.isArray(productData)) {
+                      const variant = productData.find((v: any) => v.mauSac?.toUpperCase() === cleanColor);
+                      if (variant) {
+                        const detail = variant.details?.find((d: any) => d.kichThuoc.trim() === size);
+                        if (detail && detail.hinhAnh) {
+                          image = detail.hinhAnh.startsWith('data:image')
+                            ? detail.hinhAnh
+                            : `data:image/jpeg;base64,${detail.hinhAnh}`;
+                        }
+                      }
+                    }
+                  } catch (err) {
+                    console.error('Error fetching product image for', item.tenSanPham, err);
+                  }
+                }
+              }
+
+              if (item.laCombo && item.maCombo) {
+                try {
+                  const comboResponse = await apiFetch(
+                    `${API_BASE_URL}/Combo/ComboSanPhamView?id=${item.maCombo}`,
+                    'Combo',
+                    {
+                      headers: {
+                        Authorization: `Bearer ${token}`,
+                        accept: '*/*',
+                      },
+                    }
+                  );
+                  if (Array.isArray(comboResponse) && comboResponse[0]?.hinhAnh) {
+                    image = comboResponse[0].hinhAnh.startsWith('data:image')
+                      ? comboResponse[0].hinhAnh
+                      : `data:image/jpeg;base64,${comboResponse[0].hinhAnh}`;
+                  }
+                } catch (err) {
+                  console.error('Error fetching combo image for', item.tenSanPham, err);
+                }
+
+                if (comboData?.sanPhamsTrongCombo) {
+                  comboData.sanPhamsTrongCombo = await Promise.all(
+                    comboData.sanPhamsTrongCombo.map(async (sub: any) => {
+                      let subImage = sub.hinhAnh || defaultImage;
+                      if (sub.maSanPham) {
+                        const [subBaseId, subColorHex, subSize] = sub.maSanPham.split('_') || [];
+                        if (subBaseId && subColorHex && subSize) {
+                          const subCleanColor = subColorHex.replace('#', '').toUpperCase();
+                          try {
+                            const subProductData = await apiFetch(
+                              `${API_BASE_URL}/SanPham/SanPhamByIDSorted?id=${subBaseId}`,
+                              'Product',
+                              { headers: { Authorization: `Bearer ${token}` } }
+                            );
+                            if (Array.isArray(subProductData)) {
+                              const subVariant = subProductData.find(
+                                (v: any) => v.mauSac?.toUpperCase() === subCleanColor
+                              );
+                              if (subVariant) {
+                                const subDetail = subVariant.details?.find(
+                                  (d: any) => d.kichThuoc.trim() === sub.kichThuoc
+                                );
+                                if (subDetail && subDetail.hinhAnh) {
+                                  subImage = subDetail.hinhAnh.startsWith('data:image')
+                                    ? subDetail.hinhAnh
+                                    : `data:image/jpeg;base64,${subDetail.hinhAnh}`;
+                                }
+                              }
+                            }
+                          } catch (err) {
+                            console.error('Error fetching sub-item image for', sub.tenSanPham, err);
+                          }
+                        }
+                      }
+                      return { ...sub, hinhAnh: subImage };
+                    })
+                  );
+                }
+              }
+
+              return {
+                id: item.maChiTietDh,
+                name: item.tenSanPham,
+                quantity: item.soLuong,
+                price: item.gia,
+                image,
+                isCombo: item.laCombo,
+                combo: comboData
+                  ? {
+                    tenCombo: comboData.tenCombo,
+                    giaCombo: comboData.giaCombo,
+                    sanPhamsTrongCombo: comboData.sanPhamsTrongCombo,
+                  }
+                  : undefined,
+                itemTotal: item.thanhTien,
+                color: item.mauSac,
+                size: item.kichThuoc,
+                colorHex: item.mauSacHex,
+                maSanPham: item.maSanPham,
+              };
+            })
+          );
+
+          return {
+            id: rawOrder.maDonHang.toString(),
+            date: formattedDate,
+            status: mapStatus(rawOrder.trangThaiDonHang),
+            total: rawOrder.tongTien,
+            tongTien: rawOrder.thongTinDonHang?.thanhTienCuoiCung || rawOrder.finalAmount || rawOrder.tongTien,
+            discountAmount: rawOrder.discountAmount || 0,
+            shippingFee: rawOrder.shippingFee || rawOrder.thongTinDonHang?.phiGiaoHang || 0,
+            items,
+            tenNguoiNhan: rawOrder.tenNguoiNhan,
+            hinhThucThanhToan: rawOrder.hinhThucThanhToan,
+            sdt: rawOrder.thongTinNguoiDung?.sdt,
+            lyDoHuy: rawOrder.lyDoHuy,
+            paymentStatusText: rawOrder.paymentStatusText ||
+              (rawOrder.hinhThucThanhToan === 'VNPay' ? 'Đã thanh toán' :
+                rawOrder.trangThaiDonHang === 3 ? 'Đã thanh toán' : 'Chưa thanh toán'),
+          };
+        })
+      );
+
+      mappedOrders.sort((a, b) => parseInt(b.id) - parseInt(a.id));
 
       const pageSize = 10;
       const totalRecords = mappedOrders.length;
@@ -621,160 +1115,6 @@ const OrderHistory = () => {
       setNotification({ message: error.message || 'Đã xảy ra lỗi khi tải lịch sử đơn hàng', type: 'error' });
       setOrders([]);
       setOriginalOrders([]);
-      setTrackingOrders([]);
-    } finally {
-      if (isRefresh) setRefreshing(false);
-      else setLoading(false);
-    }
-  };
-
-  const searchOrders = async (query: string, page: number = 1, isRefresh: boolean = false) => {
-    try {
-      if (isRefresh) setRefreshing(true);
-      else setLoading(true);
-
-      const fileUri = FileSystem.documentDirectory + 'user.json';
-      const fileInfo = await FileSystem.getInfoAsync(fileUri);
-      if (!fileInfo.exists) {
-        setNotification({ message: 'Vui lòng đăng nhập để tra cứu đơn hàng', type: 'error' });
-        router.push('/(auth)/login');
-        return;
-      }
-
-      const fileContent = await FileSystem.readAsStringAsync(fileUri, { encoding: FileSystem.EncodingType.UTF8 });
-      const userData = JSON.parse(fileContent);
-      const userId = userData?.user?.maNguoiDung;
-      const token = userData?.token;
-
-      if (!userId || !token) {
-        setNotification({ message: 'Vui lòng đăng nhập để tra cứu đơn hàng', type: 'error' });
-        router.push('/(auth)/login');
-        return;
-      }
-
-      if (!query.trim()) {
-        await fetchOrdersByUserId(1, isRefresh);
-        return;
-      }
-
-      const rawOrders = await apiFetch(`${API_BASE_URL}/user/orders/search?maDonHang=${encodeURIComponent(query)}&tenNguoiNhan=${encodeURIComponent(query)}`, 'SearchOrders', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      if (!Array.isArray(rawOrders)) {
-        setNotification({ message: 'Dữ liệu đơn hàng không hợp lệ', type: 'error' });
-        setOrders([]);
-        return;
-      }
-
-      const mappedOrders = rawOrders.map((rawOrder: any) => ({
-        id: rawOrder.maDonHang.toString(),
-        date: rawOrder.ngayDat ? new Date(rawOrder.ngayDat).toLocaleDateString('vi-VN') : 'N/A',
-        status: mapStatus(rawOrder.trangThaiDonHang),
-        total: rawOrder.tongTien,
-        tongTien: rawOrder.thongTinDonHang?.thanhTienCuoiCung || rawOrder.tongTien,
-        items: rawOrder.sanPhams.map((item: any) => ({
-          id: item.maChiTietDh,
-          name: item.tenSanPham,
-          quantity: item.soLuong,
-          price: item.gia,
-          image: item.hinhAnh || "https://tronhouse.com/assets/data/editor/source/meo-chup-anh-san-pham-quan-ao-de-kinh-doanh-online-hieu-qua/chup-anh-quan-ao-2.jpg",
-        })),
-        tenNguoiNhan: rawOrder.tenNguoiNhan,
-        hinhThucThanhToan: rawOrder.hinhThucThanhToan,
-        sdt: rawOrder.thongTinNguoiDung?.sdt,
-        lyDoHuy: rawOrder.lyDoHuy,
-        paymentStatusText: rawOrder.paymentStatusText || (rawOrder.hinhThucThanhToan === 'VNPay' ? 'Đã thanh toán' : rawOrder.trangThaiDonHang === 3 ? 'Đã thanh toán' : 'Chưa thanh toán'),
-      }));
-
-      const pageSize = 10;
-      const totalRecords = mappedOrders.length;
-      const totalPages = Math.ceil(totalRecords / pageSize);
-      const startIndex = (page - 1) * pageSize;
-      const paginatedOrders = mappedOrders.slice(startIndex, startIndex + pageSize);
-
-      setOrders(paginatedOrders);
-      setAllOrdersPagination({
-        currentPage: page,
-        pageSize,
-        totalRecords,
-        totalPages,
-        hasNextPage: page < totalPages,
-        hasPreviousPage: page > 1,
-      });
-    } catch (error: any) {
-      console.error("Error searching orders:", error);
-      setNotification({ message: error.message || 'Đã xảy ra lỗi khi tra cứu đơn hàng', type: 'error' });
-      setOrders([]);
-    } finally {
-      if (isRefresh) setRefreshing(false);
-      else setLoading(false);
-    }
-  };
-
-  const searchTrackingOrders = async (query: string, isRefresh: boolean = false) => {
-    try {
-      if (isRefresh) setRefreshing(true);
-      else setLoading(true);
-
-      const fileUri = FileSystem.documentDirectory + 'user.json';
-      const fileInfo = await FileSystem.getInfoAsync(fileUri);
-      if (!fileInfo.exists) {
-        setNotification({ message: 'Vui lòng đăng nhập để tra cứu đơn hàng', type: 'error' });
-        router.push('/(auth)/login');
-        return;
-      }
-
-      const fileContent = await FileSystem.readAsStringAsync(fileUri, { encoding: FileSystem.EncodingType.UTF8 });
-      const userData = JSON.parse(fileContent);
-      const userId = userData?.user?.maNguoiDung;
-      const token = userData?.token;
-
-      if (!userId || !token) {
-        setNotification({ message: 'Vui lòng đăng nhập để tra cứu đơn hàng', type: 'error' });
-        router.push('/(auth)/login');
-        return;
-      }
-
-      if (!query.trim()) {
-        setTrackingOrders(originalOrders);
-        return;
-      }
-
-      const rawOrders = await apiFetch(`${API_BASE_URL}/user/orders/search?maDonHang=${encodeURIComponent(query)}&tenNguoiNhan=${encodeURIComponent(query)}`, 'SearchOrders', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      if (!Array.isArray(rawOrders)) {
-        setNotification({ message: 'Dữ liệu đơn hàng không hợp lệ', type: 'error' });
-        setTrackingOrders([]);
-        return;
-      }
-
-      const mappedOrders = rawOrders.map((rawOrder: any) => ({
-        id: rawOrder.maDonHang.toString(),
-        date: rawOrder.ngayDat ? new Date(rawOrder.ngayDat).toLocaleDateString('vi-VN') : 'N/A',
-        status: mapStatus(rawOrder.trangThaiDonHang),
-        total: rawOrder.tongTien,
-        tongTien: rawOrder.thongTinDonHang?.thanhTienCuoiCung || rawOrder.tongTien,
-        items: rawOrder.sanPhams.map((item: any) => ({
-          id: item.maChiTietDh,
-          name: item.tenSanPham,
-          quantity: item.soLuong,
-          price: item.gia,
-          image: item.hinhAnh || "https://tronhouse.com/assets/data/editor/source/meo-chup-anh-san-pham-quan-ao-de-kinh-doanh-online-hieu-qua/chup-anh-quan-ao-2.jpg",
-        })),
-        tenNguoiNhan: rawOrder.tenNguoiNhan,
-        hinhThucThanhToan: rawOrder.hinhThucThanhToan,
-        sdt: rawOrder.thongTinNguoiDung?.sdt,
-        lyDoHuy: rawOrder.lyDoHuy,
-        paymentStatusText: rawOrder.paymentStatusText || (rawOrder.hinhThucThanhToan === 'VNPay' ? 'Đã thanh toán' : rawOrder.trangThaiDonHang === 3 ? 'Đã thanh toán' : 'Chưa thanh toán'),
-      }));
-
-      setTrackingOrders(mappedOrders);
-    } catch (error: any) {
-      console.error("Error searching tracking orders:", error);
-      setNotification({ message: error.message || 'Đã xảy ra lỗi khi tra cứu đơn hàng', type: 'error' });
       setTrackingOrders([]);
     } finally {
       if (isRefresh) setRefreshing(false);
@@ -854,39 +1194,17 @@ const OrderHistory = () => {
 
   const handlePageChange = (page: number) => {
     if (page >= 1 && page <= allOrdersPagination.totalPages) {
-      if (searchQuery.trim()) {
-        searchOrders(searchQuery, page);
-      } else {
-        fetchOrdersByUserId(page);
-      }
+      fetchOrdersByUserId(page);
     }
   };
 
   const onRefresh = async () => {
-    if (activeTab === 'tracking') {
-      await searchTrackingOrders(trackingSearch, true);
-    } else if (searchQuery.trim()) {
-      await searchOrders(searchQuery, 1, true);
-    } else {
-      await fetchOrdersByUserId(1, true);
-    }
+    await fetchOrdersByUserId(1, true);
   };
 
   useEffect(() => {
     fetchOrdersByUserId();
   }, []);
-
-  useEffect(() => {
-    const delayDebounceFn = setTimeout(() => {
-      if (activeTab === 'tracking') {
-        searchTrackingOrders(trackingSearch);
-      } else {
-        searchOrders(searchQuery);
-      }
-    }, 500);
-
-    return () => clearTimeout(delayDebounceFn);
-  }, [searchQuery, trackingSearch, activeTab]);
 
   const getOrderCountByStatus = (status: OrderStatus | "all") => {
     if (status === "all") return originalOrders.length;
@@ -955,10 +1273,6 @@ const OrderHistory = () => {
         >
           {[
             { value: "all", label: "Tất cả", icon: ClipboardList },
-            { value: "pending", label: "Chờ xác nhận", icon: ClipboardList },
-            { value: "processing", label: "Đang xử lý", icon: Package },
-            { value: "shipping", label: "Đang giao", icon: Truck },
-            { value: "completed", label: "Hoàn thành", icon: CheckCircle },
             { value: "tracking", label: "Theo dõi", icon: Package },
           ].map((tab) => (
             <TouchableOpacity
@@ -980,74 +1294,19 @@ const OrderHistory = () => {
           ))}
         </ScrollView>
 
-        <View style={[styles.filterContainer, { backgroundColor: themeColors.card }]}>
-          {activeTab !== 'tracking' && (
-            <View style={styles.filterRow}>
-              <Text style={[styles.filterLabel, { color: themeColors.textPrimary } as TextStyle]}>Đơn hàng của bạn</Text>
-              <View style={[styles.pickerContainer, { borderColor: themeColors.border }]}>
-                <Picker
-                  selectedValue={filterStatus}
-                  onValueChange={(itemValue) => setFilterStatus(itemValue)}
-                  style={styles.picker}
-                >
-                  <Picker.Item label="Tất cả trạng thái" value="all" />
-                  <Picker.Item label="Chờ xác nhận" value="pending" />
-                  <Picker.Item label="Đang xử lý" value="processing" />
-                  <Picker.Item label="Đang giao hàng" value="shipping" />
-                  <Picker.Item label="Đã hoàn thành" value="completed" />
-                  <Picker.Item label="Đã hủy" value="canceled" />
-                </Picker>
-              </View>
-            </View>
-          )}
-
-          <View style={styles.searchContainer}>
-            <Text style={[styles.searchLabel, { color: themeColors.textPrimary } as TextStyle]}>
-              {activeTab === 'tracking' ? 'Tra cứu đơn hàng theo dõi' : 'Tra cứu đơn hàng'}
-            </Text>
-            <View style={styles.searchRow}>
-              <View style={[styles.searchInputContainer, { borderColor: themeColors.border }]}>
-                <TextInput
-                  style={[styles.searchInput, { color: themeColors.textPrimary } as TextStyle]}
-                  placeholder={activeTab === 'tracking' ? "Tìm kiếm theo mã đơn hoặc người nhận..." : "Tìm kiếm theo mã đơn hoặc người nhận..."}
-                  placeholderTextColor={themeColors.textSecondary}
-                  value={activeTab === 'tracking' ? trackingSearch : searchQuery}
-                  onChangeText={activeTab === 'tracking' ? setTrackingSearch : setSearchQuery}
-                  onSubmitEditing={() => activeTab === 'tracking' ? searchTrackingOrders(trackingSearch) : searchOrders(searchQuery)}
-                />
-                {(activeTab === 'tracking' ? trackingSearch : searchQuery).length > 0 && (
-                  <TouchableOpacity
-                    style={styles.clearSearchButton}
-                    onPress={() => {
-                      if (activeTab === 'tracking') {
-                        setTrackingSearch("");
-                        setTrackingOrders(originalOrders);
-                      } else {
-                        setSearchQuery("");
-                        fetchOrdersByUserId();
-                      }
-                    }}
-                    activeOpacity={0.7}
-                  >
-                    <X color={themeColors.textSecondary} size={16} />
-                  </TouchableOpacity>
-                )}
-              </View>
-              <TouchableOpacity
-                style={[styles.searchButton, { backgroundColor: themeColors.primary }]}
-                onPress={() => activeTab === 'tracking' ? searchTrackingOrders(trackingSearch) : searchOrders(searchQuery)}
-                activeOpacity={0.7}
-              >
-                <View style={styles.searchButtonContent}>
-                  <Eye color={themeColors.textOnPrimary} size={16} style={styles.searchIcon} />
-                  <Text style={[styles.searchButtonText, { color: themeColors.textOnPrimary } as TextStyle]}>
-                    Kiểm tra
-                  </Text>
-                </View>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
+        <OrderFilter
+          activeTab={activeTab}
+          filterStatus={filterStatus}
+          setFilterStatus={setFilterStatus}
+          searchQuery={searchQuery}
+          setSearchQuery={setSearchQuery}
+          trackingSearch={trackingSearch}
+          setTrackingSearch={setTrackingSearch}
+          originalOrders={originalOrders}
+          setOrders={setOrders}
+          setTrackingOrders={setTrackingOrders}
+          themeColors={themeColors}
+        />
 
         {loading ? (
           <ActivityIndicator size="large" color={themeColors.primary} style={styles.loading} />
@@ -1152,7 +1411,6 @@ const styles = StyleSheet.create({
   maxWidth: { width: '100%' },
   titleContainer: { alignItems: 'center', marginBottom: 6 },
   title: { fontSize: 24, fontWeight: '700' },
-  subtitle: { fontSize: 14, marginTop: 4 },
   content: { flex: 1, paddingHorizontal: 12, paddingVertical: 10 },
   tabContainer: {
     marginBottom: 10,
@@ -1236,7 +1494,20 @@ const styles = StyleSheet.create({
   orderItemInfo: { flex: 1 },
   orderItemName: { fontSize: 14, fontWeight: '500' },
   orderItemQuantity: { fontSize: 12 },
+  colorContainer: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  colorCircle: { width: 16, height: 16, borderRadius: 8, borderWidth: 1, borderColor: '#e5e7eb' },
   orderItemTotal: { fontSize: 14, fontWeight: '600' },
+  subItemsContainer: { marginTop: 8, gap: 12, paddingLeft: 16, backgroundColor: 'rgba(0,0,0,0.05)', paddingVertical: 8, borderRadius: 6 },
+  subItem: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingTop: 8 },
+  subItemImageContainer: {
+    height: 40,
+    width: 40,
+    borderRadius: 4,
+    overflow: 'hidden',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  subItemImage: { height: '100%', width: '100%' },
   orderSummary: { marginTop: 12, paddingTop: 12, borderTopWidth: 1 },
   orderSummaryRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
   orderSummaryLabel: { fontSize: 14 },

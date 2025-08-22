@@ -23,7 +23,7 @@ import axios from 'axios';
 import Select from 'react-native-picker-select';
 import { Ionicons } from '@expo/vector-icons';
 
-const API_BASE_URL = 'https://ce5e722365ab.ngrok-free.app/api';
+const API_BASE_URL = 'https://bicacuatho.azurewebsites.net/api';
 
 interface Province { ProvinceID: number; ProvinceName: string; }
 interface District { DistrictID: number; DistrictName: string; }

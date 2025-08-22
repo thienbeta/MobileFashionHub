@@ -17,7 +17,7 @@ import { colors } from '../../style/themeColors';
 import * as FileSystem from 'expo-file-system';
 import { apiFetch } from '../../../src/utils/api';
 
-const API_BASE_URL = 'https://ce5e722365ab.ngrok-free.app/api';
+const API_BASE_URL = 'https://bicacuatho.azurewebsites.net/api';
 
 interface CartItem {
   idSanPham: string;

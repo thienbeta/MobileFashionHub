@@ -28,6 +28,7 @@ interface ProductFromAPI {
   hinhAnhs: string[];
   ngayTao: string;
   trangThai: number;
+  khuyenMaiMax: number;
 }
 
 interface Comment {
@@ -48,17 +49,19 @@ interface Product {
   colorCode: string;
   name: string;
   price: number;
+  originalPrice: number;
   images: string[];
   productType: string;
   description: string | null;
-  sizes: { size: string; quantity: number; price: number }[];
+  sizes: { size: string; quantity: number; price: number; originalPrice: number }[];
   material: string;
   brand: string;
   color: string;
   rating: number;
+  discountPercent: number;
 }
 
-const API_BASE_URL = 'https://ce5e722365ab.ngrok-free.app/api';
+const API_BASE_URL = 'https://bicacuatho.azurewebsites.net/api';
 
 export default function ProductDetailScreen() {
   const { id } = useLocalSearchParams();
@@ -119,6 +122,7 @@ export default function ProductDetailScreen() {
         const productArray = Array.isArray(productData) ? productData : [productData];
 
         const formattedProducts: Product[] = productArray.map((product: ProductFromAPI) => {
+          const discount = product.khuyenMaiMax || 0;
           const [baseId, colorCode] = product.id.split('_');
           return {
             id: product.id,
@@ -126,13 +130,16 @@ export default function ProductDetailScreen() {
             colorCode,
             name: product.tenSanPham,
             description: product.moTa || 'Không có mô tả',
-            price: product.details[0]?.gia || 0,
+            originalPrice: product.details[0]?.gia || 0,
+            price: Math.round((product.details[0]?.gia || 0) * (1 - discount / 100)),
+            discountPercent: discount,
             rating: 0,
             color: `#${product.mauSac || colorCode}`,
             sizes: product.details.map(detail => ({
               size: detail.kichThuoc.trim(),
               quantity: detail.soLuong,
-              price: detail.gia,
+              originalPrice: detail.gia,
+              price: Math.round(detail.gia * (1 - discount / 100)),
             })),
             material: product.chatLieu,
             brand: product.maThuongHieu,
@@ -431,8 +438,8 @@ export default function ProductDetailScreen() {
 
   const currentProduct = products[selectedColorIndex];
   const availableSizes = currentProduct.sizes;
-  const selectedPrice =
-    selectedSizeIndex !== null ? currentProduct.sizes[selectedSizeIndex].price : currentProduct.price;
+  const currentOriginalPrice = selectedSizeIndex !== null ? currentProduct.sizes[selectedSizeIndex].originalPrice : currentProduct.originalPrice;
+  const currentFinalPrice = selectedSizeIndex !== null ? currentProduct.sizes[selectedSizeIndex].price : currentProduct.price;
   const currentUserId = userData?.maNguoiDung;
 
   return (
@@ -473,13 +480,27 @@ export default function ProductDetailScreen() {
               fill={index < Math.floor(currentProduct.rating) ? '#facc15' : 'none'}
             />
           ))}
-          <Text style={[styles.ratingText, { color: themeColors.textSecondary }]}>
+          <Text style={[styles.rating, { color: themeColors.textSecondary }]}>
             {currentProduct.rating}
           </Text>
         </View>
-        <Text style={[styles.price, { color: themeColors.iconPrimary }]}>
-          {(selectedPrice / 1000)?.toFixed(3)} VND
-        </Text>
+        <View style={[styles.priceContainer, { flexDirection: "column", alignItems: "flex-start" }]}>
+          <Text style={[styles.price, { color: themeColors.iconPrimary }]}>
+            {(currentFinalPrice / 1000)?.toFixed(3)} VND
+          </Text>
+
+          {currentProduct.discountPercent > 0 && (
+            <View style={{ flexDirection: "row", alignItems: "center", marginTop: 2 }}>
+              <Text style={styles.originalPrice}>
+                {(currentOriginalPrice / 1000)?.toFixed(3)} VND
+              </Text>
+              <Text style={[styles.discountPercent, { marginLeft: 6 }]}>
+                -{currentProduct.discountPercent}%
+              </Text>
+            </View>
+          )}
+        </View>
+
 
         <Text style={[styles.sectionTitle, { color: themeColors.textPrimary }]}>Màu sắc</Text>
         <View style={styles.colorsContainer}>
@@ -639,7 +660,7 @@ export default function ProductDetailScreen() {
                       fill={index < comment.danhGia ? '#facc15' : 'none'}
                     />
                   ))}
-                  <Text style={[styles.commentDate, { color: themeColors.textSecondary }]}>
+                  <Text style={[styles.rating, { color: themeColors.textSecondary }]}>
                     {new Date(comment.ngayBinhLuan).toLocaleDateString()}
                   </Text>
                 </View>
@@ -664,7 +685,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: 24,
-    paddingTop: 48,
+    paddingTop: 4,
   },
   backButton: {
     width: 40,
@@ -718,15 +739,30 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 8,
   },
-  ratingText: {
+  rating: {
     marginLeft: 4,
     fontSize: 14,
     fontFamily: 'Poppins_400Regular',
   },
+  priceContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
   price: {
     fontSize: 24,
     fontFamily: 'Poppins_700Bold',
-    marginBottom: 24,
+  },
+  originalPrice: {
+    fontSize: 18,
+    textDecorationLine: 'line-through',
+    color: 'gray',
+    marginLeft: 8,
+  },
+  discountPercent: {
+    fontSize: 18,
+    color: 'red',
+    marginLeft: 8,
   },
   sectionTitle: {
     fontSize: 18,

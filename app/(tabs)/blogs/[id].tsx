@@ -21,7 +21,7 @@ import * as FileSystem from "expo-file-system";
 import RenderHTML, { CustomBlockRenderer } from "react-native-render-html";
 import { convert } from "html-to-text";
 
-const API_BASE_URL = "https://ce5e722365ab.ngrok-free.app/api";
+const API_BASE_URL = "https://bicacuatho.azurewebsites.net/api";
 
 interface NguoiDung {
     maNguoiDung: string;

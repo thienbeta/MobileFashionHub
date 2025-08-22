@@ -8,7 +8,7 @@ import axios from 'axios';
 import * as Notifications from 'expo-notifications';
 import { Ionicons } from '@expo/vector-icons';
 
-const API_BASE_URL = 'https://ce5e722365ab.ngrok-free.app/api';
+const API_BASE_URL = 'https://bicacuatho.azurewebsites.net/api';
 
 export default function ContactScreen() {
   const { theme } = useTheme();

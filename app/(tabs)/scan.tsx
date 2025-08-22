@@ -11,7 +11,7 @@ import { colors } from '../style/themeColors';
 import * as FileSystem from 'expo-file-system';
 import { apiFetch } from '../../src/utils/api';
 
-const API_BASE_URL = 'https://ce5e722365ab.ngrok-free.app/api';
+const API_BASE_URL = 'https://bicacuatho.azurewebsites.net/api';
 
 type RootStackParamList = {
   Product: { productId: string };
@@ -100,8 +100,8 @@ export default function ScanScreen() {
       }
 
       // Xử lý QR code cho sao chép giỏ hàng
-      if (data.startsWith('http://localhost:5261/api/Cart/CopyGioHang?id=')) {
-        const copyGioHangId = data.split('http://localhost:5261/api/Cart/CopyGioHang?id=')[1];
+      if (data.startsWith('https://bicacuatho.azurewebsites.net/api/Cart/CopyGioHang?id=')) {
+        const copyGioHangId = data.split('https://bicacuatho.azurewebsites.net/api/Cart/CopyGioHang?id=')[1];
         router.push({
           pathname: '/(tabs)/copycart/[id]',
           params: { id: copyGioHangId },

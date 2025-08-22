@@ -17,7 +17,7 @@ import { colors } from '../../style/themeColors';
 import { apiFetch } from '../../../src/utils/api';
 import * as FileSystem from 'expo-file-system';
 
-const API_BASE_URL = 'https://ce5e722365ab.ngrok-free.app/api';
+const API_BASE_URL = 'https://bicacuatho.azurewebsites.net/api';
 
 interface ComboItem {
   idCombo: number;

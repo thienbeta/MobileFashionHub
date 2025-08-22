@@ -16,7 +16,7 @@ Notifications.setNotificationHandler({
   }),
 });
 
-const API_BASE_URL = 'https://ce5e722365ab.ngrok-free.app/api/NguoiDung';
+const API_BASE_URL = 'https://bicacuatho.azurewebsites.net/api/NguoiDung';
 
 export default function RegisterScreen() {
   const router = useRouter();

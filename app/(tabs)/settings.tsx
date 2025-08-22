@@ -11,7 +11,7 @@ import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 
-const API_BASE_URL = 'https://ce5e722365ab.ngrok-free.app/api/XacThuc';
+const API_BASE_URL = 'https://bicacuatho.azurewebsites.net/api/XacThuc';
 
 interface UserData {
   hoTen: string;

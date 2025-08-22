@@ -31,7 +31,7 @@ import * as Clipboard from 'expo-clipboard';
 import { TabView, SceneMap, TabBar } from 'react-native-tab-view';
 import Svg, { Path, Text as SvgText } from 'react-native-svg';
 
-const API_BASE_URL = 'https://ce5e722365ab.ngrok-free.app/api';
+const API_BASE_URL = 'https://bicacuatho.azurewebsites.net/api';
 const { width: screenWidth } = Dimensions.get('window');
 
 interface Coupon {

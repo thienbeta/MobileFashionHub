@@ -21,6 +21,7 @@ interface Product {
   hinh: string[];
   ngayTao: string;
   trangThai: number;
+  khuyenMaiMax: number;
 }
 
 interface Styles {
@@ -48,6 +49,8 @@ interface Styles {
   productInfoDark: ViewStyle;
   productName: TextStyle;
   productPrice: TextStyle;
+  productOriginalPrice: TextStyle;
+  productDiscount: TextStyle;
   productCategory: TextStyle;
   errorText: TextStyle;
   emptyText: TextStyle;
@@ -73,7 +76,7 @@ export default function ProductsScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const API_BASE_URL = 'https://ce5e722365ab.ngrok-free.app/api';
+  const API_BASE_URL = 'https://bicacuatho.azurewebsites.net/api';
 
   const priceRanges: Record<PriceRangeKey, { min: number; max: number }> = {
     'under-100000': { min: 0, max: 100000 },
@@ -157,14 +160,25 @@ export default function ProductsScreen() {
     }
     if (selectedPriceRange && priceRanges[selectedPriceRange]) {
       const { min, max } = priceRanges[selectedPriceRange];
-      result = result.filter((product) => product.donGia >= min && product.donGia <= max);
+      result = result.filter((product) => {
+        const finalPrice = Math.round(product.donGia * (1 - (product.khuyenMaiMax || 0) / 100));
+        return finalPrice >= min && finalPrice <= max;
+      });
     }
     switch (sortOrder) {
       case 'price-asc':
-        result.sort((a, b) => a.donGia - b.donGia);
+        result.sort((a, b) => {
+          const priceA = Math.round(a.donGia * (1 - (a.khuyenMaiMax || 0) / 100));
+          const priceB = Math.round(b.donGia * (1 - (b.khuyenMaiMax || 0) / 100));
+          return priceA - priceB;
+        });
         break;
       case 'price-desc':
-        result.sort((a, b) => b.donGia - a.donGia);
+        result.sort((a, b) => {
+          const priceA = Math.round(a.donGia * (1 - (a.khuyenMaiMax || 0) / 100));
+          const priceB = Math.round(b.donGia * (1 - (b.khuyenMaiMax || 0) / 100));
+          return priceB - priceA;
+        });
         break;
       case 'name-asc':
         result.sort((a, b) => a.name.localeCompare(b.name));
@@ -184,28 +198,64 @@ export default function ProductsScreen() {
     setSelectedPriceRange(null);
   };
 
-  const renderProduct = ({ item }: { item: Product }) => (
-    <TouchableOpacity
-      style={styles.productCard}
-      onPress={() => router.push(`/products/${item.id}`)}
-    >
-      <Image
-        source={{
-          uri: item.hinh[0]?.startsWith('http')
-            ? item.hinh[0]
-            : item.hinh[0]
-            ? `data:image/jpeg;base64,${item.hinh[0]}`
-            : 'https://images.unsplash.com/photo-1591369822096-ffd140ec948f?w=500',
-        }}
-        style={styles.productImage}
-      />
-      <View style={[styles.productInfo, isDarkMode && styles.productInfoDark]}>
-        <Text style={[styles.productName, isDarkMode && styles.textDark]}>{item.name}</Text>
-        <Text style={styles.productPrice}>{formatter.format(item.donGia)}</Text>
-        <Text style={[styles.productCategory, isDarkMode && styles.textDark]}>{item.loaiSanPham}</Text>
-      </View>
-    </TouchableOpacity>
-  );
+  const renderProduct = ({ item }: { item: Product }) => {
+    const discount = item.khuyenMaiMax || 0;
+    const finalPrice = Math.round(item.donGia * (1 - discount / 100));
+    return (
+      <TouchableOpacity
+        style={styles.productCard}
+        onPress={() => router.push(`/products/${item.id}`)}
+      >
+        <Image
+          source={{
+            uri: item.hinh[0]?.startsWith('http')
+              ? item.hinh[0]
+              : item.hinh[0]
+                ? `data:image/jpeg;base64,${item.hinh[0]}`
+                : 'https://images.unsplash.com/photo-1591369822096-ffd140ec948f?w=500',
+          }}
+          style={styles.productImage}
+        />
+        <View style={[styles.productInfo, isDarkMode && styles.productInfoDark]}>
+          <Text style={[styles.productName, isDarkMode && styles.textDark]}>
+            {item.name}
+          </Text>
+
+          <View style={{ flexDirection: "column", alignItems: "flex-start", marginTop: 4 }}>
+            <Text style={[styles.productPrice, { textAlign: "left" }]}>
+              {formatter.format(finalPrice)}
+            </Text>
+
+            {discount > 0 && (
+              <View style={{ flexDirection: "row", alignItems: "center", alignSelf: "flex-start", marginTop: 2, marginLeft: -6, }}>
+                <Text
+                  style={[
+                    styles.productOriginalPrice,
+                    { textAlign: "left" }
+                  ]}
+                >
+                  {formatter.format(item.donGia)}
+                </Text>
+                <Text
+                  style={[
+                    styles.productDiscount,
+                    { marginLeft: 6, textAlign: "left" } 
+                  ]}
+                >
+                  -{discount}%
+                </Text>
+              </View>
+            )}
+          </View>
+
+          <Text style={[styles.productCategory, isDarkMode && styles.textDark]}>
+            {item.loaiSanPham}
+          </Text>
+        </View>
+
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <View style={[styles.container, isDarkMode && styles.containerDark]}>
@@ -326,13 +376,13 @@ const styles = StyleSheet.create<Styles>({
   container: {
     flex: 1,
     backgroundColor: '#fff',
-    paddingTop: 48,
+    paddingTop: 4,
   },
   containerDark: {
     backgroundColor: '#1A202C',
   },
   header: {
-    padding: 24,
+    padding: 4,
   },
   tabContainer: {
     flexDirection: 'row',
@@ -435,6 +485,17 @@ const styles = StyleSheet.create<Styles>({
     fontFamily: 'Poppins_600SemiBold',
     color: '#9F7AEA',
     marginTop: 4,
+  },
+  productOriginalPrice: {
+    fontSize: 14,
+    textDecorationLine: 'line-through',
+    color: '#718096',
+    marginLeft: 8,
+  },
+  productDiscount: {
+    fontSize: 14,
+    color: '#FF0000',
+    marginLeft: 8,
   },
   productCategory: {
     fontSize: 12,

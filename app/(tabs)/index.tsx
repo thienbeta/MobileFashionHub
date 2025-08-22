@@ -15,7 +15,7 @@ import { colors } from "../style/themeColors";
 import { useRouter } from "expo-router";
 import axios from "axios";
 
-const API_BASE_URL = "https://ce5e722365ab.ngrok-free.app/api";
+const API_BASE_URL = "https://bicacuatho.azurewebsites.net/api";
 
 interface CategoryFromAPI {
   maLoaiSanPham: number;
@@ -39,6 +39,13 @@ interface ProductFromAPI {
   hinh: string[];
   ngayTao: string;
   trangThai: number;
+  khuyenMaiMax: number;
+}
+
+interface ComboSanPham {
+  idSanPham: string;
+  donGia: number;
+  soLuong: number;
 }
 
 interface ComboFromAPI {
@@ -47,10 +54,11 @@ interface ComboFromAPI {
   hinhAnh: string;
   ngayTao: string;
   trangThai: number;
-  sanPhams: ProductFromAPI[];
+  sanPhams: ComboSanPham[];
   moTa: string;
   gia: number;
   soLuong: number;
+  khuyenMaiMax: number;
 }
 
 interface BlogFromAPI {
@@ -72,6 +80,8 @@ interface Product {
   id: string;
   name: string;
   price: number;
+  originalPrice: number;
+  discountPercent: number;
   image: string;
   isNew: boolean;
   type: "product";
@@ -81,6 +91,10 @@ interface Combo {
   id: number;
   name: string;
   price: number;
+  originalPrice: number;
+  discountPercent: number;
+  savings: number;
+  savingsPercentage: number;
   image: string;
   type: "combo";
 }
@@ -93,13 +107,31 @@ interface Blog {
   type: "blog";
 }
 
-interface SearchResult {
-  id: string | number;
-  name?: string;
-  title?: string;
-  image: string;
-  type: "product" | "combo" | "blog";
-}
+type SearchResult =
+  | {
+    type: "product";
+    id: string;
+    name: string;
+    image: string;
+    price: number;
+    originalPrice: number;
+    discountPercent: number;
+  }
+  | {
+    type: "combo";
+    id: string;
+    name: string;
+    image: string;
+    price: number;
+    originalPrice: number;
+    discountPercent: number;
+  }
+  | {
+    type: "blog";
+    id: string;
+    title: string;
+    image: string;
+  };
 
 export default function HomeScreen() {
   const { theme } = useTheme();
@@ -150,18 +182,24 @@ export default function HomeScreen() {
         );
         if (!productsData.data) throw new Error("Không có dữ liệu sản phẩm");
         setFeaturedProducts(
-          productsData.data.map((product) => ({
-            id: product.id,
-            name: product.name,
-            price: product.donGia,
-            image: product.hinh[0]?.startsWith("http")
-              ? product.hinh[0]
-              : product.hinh[0]
-                ? `data:image/png;base64,${product.hinh[0]}`
-                : "https://images.unsplash.com/photo-1591369822096-ffd140ec948f?w=500",
-            isNew: new Date(product.ngayTao) > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
-            type: "product",
-          }))
+          productsData.data.map((product) => {
+            const discount = product.khuyenMaiMax || 0;
+            const finalPrice = Math.round(product.donGia * (1 - discount / 100));
+            return {
+              id: product.id,
+              name: product.name,
+              price: finalPrice,
+              originalPrice: product.donGia,
+              discountPercent: discount,
+              image: product.hinh[0]?.startsWith("http")
+                ? product.hinh[0]
+                : product.hinh[0]
+                  ? `data:image/png;base64,${product.hinh[0]}`
+                  : "https://images.unsplash.com/photo-1591369822096-ffd140ec948f?w=500",
+              isNew: new Date(product.ngayTao) > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+              type: "product",
+            };
+          })
         );
 
         const combosData = await axios.get<ComboFromAPI[]>(
@@ -169,17 +207,33 @@ export default function HomeScreen() {
         );
         if (!combosData.data) throw new Error("Không có dữ liệu combo");
         setCombos(
-          combosData.data.map((combo) => ({
-            id: combo.maCombo,
-            name: combo.name,
-            price: combo.gia,
-            image: combo.hinhAnh?.startsWith("http")
-              ? combo.hinhAnh
-              : combo.hinhAnh
-                ? `data:image/png;base64,${combo.hinhAnh}`
-                : "https://images.unsplash.com/photo-1542272604-787c3835535d?w=500",
-            type: "combo",
-          }))
+          combosData.data.map((combo) => {
+            const totalRetail = combo.sanPhams.reduce(
+              (sum, p) => sum + (p.donGia * p.soLuong),
+              0
+            );
+            const discount = combo.khuyenMaiMax || 0;
+            const finalPrice = Math.round(combo.gia * (1 - discount / 100));
+            const savings = totalRetail - finalPrice;
+            const savingsPercentage = Math.round(
+              ((totalRetail - combo.gia) / totalRetail) * 100
+            );
+            return {
+              id: combo.maCombo,
+              name: combo.name,
+              price: finalPrice,
+              originalPrice: totalRetail,
+              discountPercent: discount,
+              savings,
+              savingsPercentage,
+              image: combo.hinhAnh?.startsWith("http")
+                ? combo.hinhAnh
+                : combo.hinhAnh
+                  ? `data:image/png;base64,${combo.hinhAnh}`
+                  : "https://images.unsplash.com/photo-1542272604-787c3835535d?w=500",
+              type: "combo",
+            };
+          })
         );
 
         const blogsData = await axios.get<BlogFromAPI[]>(`${API_BASE_URL}/Blog`);
@@ -218,29 +272,37 @@ export default function HomeScreen() {
       return;
     }
 
-    const allItems = [
+    const allItems: SearchResult[] = [
       ...featuredProducts.map((p) => ({
+        type: "product" as const,
         id: p.id,
         name: p.name,
         image: p.image,
-        type: p.type,
+        price: p.price,
+        originalPrice: p.originalPrice,
+        discountPercent: p.discountPercent,
       })),
       ...combos.map((c) => ({
+        type: "combo" as const,
         id: c.id.toString(),
         name: c.name,
         image: c.image,
-        type: c.type,
+        price: c.price,
+        originalPrice: c.originalPrice,
+        discountPercent: c.discountPercent,
       })),
       ...blogs.map((b) => ({
+        type: "blog" as const,
         id: b.id.toString(),
         title: b.title,
         image: b.image,
-        type: b.type,
       })),
-    ] as SearchResult[];
+    ];
 
     const results = allItems.filter((item) =>
-      (item.name?.toLowerCase().includes(query.toLowerCase()) || item.title?.toLowerCase().includes(query.toLowerCase()))
+    (item.type === "blog"
+      ? item.title.toLowerCase().includes(query.toLowerCase())
+      : item.name.toLowerCase().includes(query.toLowerCase()))
     );
     setSearchResults(results);
   };
@@ -275,17 +337,25 @@ export default function HomeScreen() {
           style={styles.heroBackground}
         />
         <View style={[styles.heroOverlay, { backgroundColor: themeColors.heroOverlay }]}>
-          <Text style={[styles.heroTag, { backgroundColor: themeColors.heroTag }]}>Bộ sưu tập mùa hè 2025</Text>
-          <Text style={styles.heroTitle}>Khám phá phong cách hoàn hảo của bạn</Text>
+          <Text style={[styles.heroTag, { backgroundColor: themeColors.heroTag }]}>
+            FashionHub 2025
+          </Text>
+          <Text style={styles.heroTitle}>
+            Thời trang xu hướng 2025
+          </Text>
           <Text style={styles.heroSubtitle}>
-            Khám phá bộ sưu tập được tuyển chọn của chúng tôi về các xu hướng thời trang mới nhất
+            Khám phá bộ sưu tập mới nhất tại FashionHub – nơi phong cách hiện đại gặp gỡ sự tinh tế.
+            Tạo dấu ấn riêng với xu hướng thời trang 2025.
           </Text>
           <TouchableOpacity style={styles.heroButton} onPress={() => router.push("/products")}>
-            <Text style={[styles.heroButtonText, { color: themeColors.iconPrimary }]}>Mua sắm ngay</Text>
+            <Text style={[styles.heroButtonText, { color: themeColors.iconPrimary }]}>
+              Khám phá ngay
+            </Text>
             <ArrowRight size={16} color="#fff" />
           </TouchableOpacity>
         </View>
       </View>
+
 
       <View style={[styles.searchContainer, { backgroundColor: themeColors.secondaryBackground }]}>
         <Search size={20} color={themeColors.iconSecondary} />
@@ -316,9 +386,32 @@ export default function HomeScreen() {
               >
                 <Image source={{ uri: item.image }} style={styles.searchImage} />
                 <View style={styles.searchOverlay}>
-                  <Text style={[styles.searchText, { color: themeColors.textPrimary }]}>
-                    {item.name || item.title}
+                  <Text
+                    style={[styles.searchText, { color: themeColors.textPrimary }]}
+                    numberOfLines={1}
+                    ellipsizeMode="tail"
+                  >
+                    {item.type === "blog" ? item.title : item.name}
                   </Text>
+
+                  {item.type !== "blog" && (
+                    <View>
+                      <Text style={[styles.searchPrice, { color: themeColors.iconPrimary }]}>
+                        {(item.price / 1000).toFixed(3)} VND
+                      </Text>
+                      {item.discountPercent > 0 && (
+                        <View style={{ flexDirection: "row", alignItems: "center" }}>
+                          <Text style={styles.searchOriginalPrice}>
+                            {(item.originalPrice / 1000).toFixed(3)} VND
+                          </Text>
+                          <Text style={[styles.searchDiscount, { marginLeft: 6 }]}>
+                            -{item.discountPercent}%
+                          </Text>
+                        </View>
+                      )}
+
+                    </View>
+                  )}
                 </View>
               </TouchableOpacity>
             ))}
@@ -368,10 +461,27 @@ export default function HomeScreen() {
               onPress={() => router.push(`/products/${product.id}`)}
             >
               <Image source={{ uri: product.image }} style={styles.productImage} />
-              <Text style={[styles.productName, { color: themeColors.textPrimary }]}>{product.name}</Text>
-              <Text style={[styles.productPrice, { color: themeColors.iconPrimary }]}>
-                {(product.price / 1000).toFixed(3)} VND
+              <Text style={[styles.productName, { color: themeColors.textPrimary }]}>
+                {product.name}
               </Text>
+
+              <View style={[styles.productPriceContainer, { flexDirection: "column", marginTop: 4 }]}>
+                <Text style={[styles.productPrice, { color: themeColors.iconPrimary, fontSize: 20, fontWeight: "bold" }]}>
+                  {(product.price / 1000).toFixed(3)} VND
+                </Text>
+
+                {product.discountPercent > 0 && (
+                  <View style={{ flexDirection: "row", alignItems: "center", marginTop: 2 }}>
+                    <Text style={[styles.productOriginalPrice, { textDecorationLine: "line-through", color: "#888", marginRight: 6 }]}>
+                      {(product.originalPrice / 1000).toFixed(3)} VND
+                    </Text>
+                    <Text style={[styles.productDiscount, { color: "red", fontWeight: "bold" }]}>
+                      -{product.discountPercent}%
+                    </Text>
+                  </View>
+                )}
+              </View>
+
             </TouchableOpacity>
           ))}
         </View>
@@ -395,10 +505,27 @@ export default function HomeScreen() {
               }
             >
               <Image source={{ uri: combo.image }} style={styles.productImage} />
-              <Text style={[styles.productName, { color: themeColors.textPrimary }]}>{combo.name}</Text>
-              <Text style={[styles.productPrice, { color: themeColors.iconPrimary }]}>
-                {(combo.price / 1000).toFixed(3)} VND
+              <Text style={[styles.productName, { color: themeColors.textPrimary }]}>
+                {combo.name}
               </Text>
+
+              <View style={[styles.productPriceContainer, { flexDirection: "column", marginTop: 4 }]}>
+                <Text style={[styles.productPrice, { color: themeColors.iconPrimary, fontSize: 20, fontWeight: "bold" }]}>
+                  {(combo.price / 1000).toFixed(3)} VND
+                </Text>
+
+                {combo.discountPercent > 0 && (
+                  <View style={{ flexDirection: "row", alignItems: "center", marginTop: 2 }}>
+                    <Text style={[styles.productOriginalPrice, { textDecorationLine: "line-through", color: "#888", marginRight: 6 }]}>
+                      {(combo.originalPrice / 1000).toFixed(3)} VND
+                    </Text>
+                    <Text style={[styles.productDiscount, { color: "red", fontWeight: "bold" }]}>
+                      -{combo.discountPercent}%
+                    </Text>
+                  </View>
+                )}
+              </View>
+
             </TouchableOpacity>
           ))}
         </View>
@@ -475,7 +602,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   heroContainer: {
-    height: 400,
+    height: 350,
     position: "relative",
   },
   heroBackground: {
@@ -532,17 +659,24 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   searchCard: {
-    width: 120,
+    width: 140,
     height: 160,
     marginRight: 12,
     borderRadius: 12,
     overflow: "hidden",
+    backgroundColor: "#fff",
+    elevation: 3,
+    shadowColor: "#000",
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
   },
   searchImage: {
     width: "100%",
-    height: "70%",
+    height: "50%",
     borderTopLeftRadius: 12,
     borderTopRightRadius: 12,
+    resizeMode: "cover",
   },
   searchOverlay: {
     padding: 8,
@@ -556,11 +690,17 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "600",
   },
-  searchDate: {
+  searchOriginalPrice: {
     fontSize: 12,
+    textDecorationLine: "line-through",
+    color: "gray",
+  },
+  searchDiscount: {
+    fontSize: 12,
+    color: "red",
   },
   sectionContainer: {
-    padding: 24,
+    padding: 12,
   },
   sectionHeader: {
     flexDirection: "row",
@@ -624,9 +764,24 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "500",
   },
+  productPriceContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
   productPrice: {
     fontSize: 14,
     fontWeight: "600",
+  },
+  productOriginalPrice: {
+    fontSize: 14,
+    textDecorationLine: "line-through",
+    color: "gray",
+    marginLeft: 8,
+  },
+  productDiscount: {
+    fontSize: 14,
+    color: "red",
+    marginLeft: 8,
   },
   productDate: {
     fontSize: 12,

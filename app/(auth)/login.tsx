@@ -17,7 +17,7 @@ Notifications.setNotificationHandler({
   }),
 });
 
-const API_BASE_URL = 'https://ce5e722365ab.ngrok-free.app/api/XacThuc';
+const API_BASE_URL = 'https://bicacuatho.azurewebsites.net/api/XacThuc';
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -70,11 +70,11 @@ export default function LoginScreen() {
       if (response.status === 200) {
         const { user, token } = response.data;
 
-        if (user.vaiTro !== 0) {
-          Alert.alert('Lỗi', 'Chỉ người dùng (vai trò = 0) mới được phép đăng nhập.');
-          setIsLoading(false);
-          return;
-        }
+        // if (user.vaiTro !== 0) {
+        //   Alert.alert('Lỗi', 'Chỉ người dùng (vai trò = 0) mới được phép đăng nhập.');
+        //   setIsLoading(false);
+        //   return;
+        // }
 
         const userData = { taiKhoan, password, token, user };
         await FileSystem.writeAsStringAsync(FileSystem.documentDirectory + 'user.json', JSON.stringify(userData));

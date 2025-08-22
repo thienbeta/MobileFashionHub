@@ -31,6 +31,21 @@ interface Combo {
   moTa: string;
   gia: number;
   soLuong: number;
+  khuyenMaiMax: number;
+}
+
+interface SearchResult {
+  id: number;
+  name: string;
+  imageSrc: string;
+  price: number;
+  originalPrice: number | null;
+  discountPercent: number;
+  savings: number | null;
+  savingsPercentageComparedToRetail: number | null;
+  type: 'combo';
+  productCount: number;
+  moTa: string;
 }
 
 interface Styles {
@@ -59,6 +74,7 @@ interface Styles {
   comboInfoDark: ViewStyle;
   comboName: TextStyle;
   comboPrice: TextStyle;
+  originalPrice: TextStyle;
   comboDescription: TextStyle;
   badgeContainer: ViewStyle;
   badge: ViewStyle;
@@ -69,6 +85,34 @@ interface Styles {
   clearButtonText: TextStyle;
 }
 
+const transformComboData = (combos: Combo[]): SearchResult[] => {
+  return combos.map((combo) => {
+    const totalRetailPrice = combo.sanPhams.reduce(
+      (sum, p) => sum + (p.donGia * (p.soLuong || 1)),
+      0
+    );
+    const finalPrice = Math.round(combo.gia * (1 - (combo.khuyenMaiMax || 0) / 100));
+    const savings = totalRetailPrice - finalPrice;
+    const savingsPercentageComparedToRetail = Math.round(
+      ((totalRetailPrice - combo.gia) / totalRetailPrice) * 100
+    );
+
+    return {
+      id: combo.maCombo,
+      name: combo.name,
+      imageSrc: combo.hinhAnh,
+      price: finalPrice,
+      originalPrice: totalRetailPrice,
+      discountPercent: combo.khuyenMaiMax || 0,
+      savings,
+      savingsPercentageComparedToRetail,
+      type: 'combo',
+      productCount: combo.sanPhams.length,
+      moTa: combo.moTa,
+    };
+  });
+};
+
 export default function CombosScreen() {
   const router = useRouter();
   const pathname = usePathname();
@@ -76,7 +120,7 @@ export default function CombosScreen() {
   const isDarkMode = theme === 'dark';
 
   const [originalCombos, setOriginalCombos] = useState<Combo[]>([]);
-  const [filteredCombos, setFilteredCombos] = useState<Combo[]>([]);
+  const [filteredCombos, setFilteredCombos] = useState<SearchResult[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -88,13 +132,14 @@ export default function CombosScreen() {
     style: 'currency',
     currency: 'VND',
     currencyDisplay: 'code',
+    maximumFractionDigits: 0,
   });
 
   useEffect(() => {
     const fetchCombos = async () => {
       try {
         setIsLoading(true);
-        const data = await apiFetch('https://ce5e722365ab.ngrok-free.app/api/Combo/ComboSanPhamView', 'Combos');
+        const data = await apiFetch('https://bicacuatho.azurewebsites.net/api/Combo/ComboSanPhamView', 'Combos');
 
         const mappedCombos = data.map((combo: any) => ({
           maCombo: combo.maCombo,
@@ -120,6 +165,7 @@ export default function CombosScreen() {
           moTa: combo.moTa || 'Không có mô tả',
           gia: combo.gia,
           soLuong: combo.soLuong,
+          khuyenMaiMax: combo.khuyenMaiMax || 0,
         }));
 
         setOriginalCombos(mappedCombos);
@@ -147,63 +193,86 @@ export default function CombosScreen() {
     }
     if (priceRange) {
       result = result.filter(
-        (combo) => combo.gia >= priceRange.min && combo.gia <= priceRange.max
+        (combo) => {
+          const finalPrice = Math.round(combo.gia * (1 - (combo.khuyenMaiMax || 0) / 100));
+          return finalPrice >= priceRange.min && finalPrice <= priceRange.max;
+        }
       );
     }
     switch (sortOrder) {
       case 'price-asc':
-        result.sort((a, b) => a.gia - b.gia);
+        result.sort((a, b) => {
+          const priceA = Math.round(a.gia * (1 - (a.khuyenMaiMax || 0) / 100));
+          const priceB = Math.round(b.gia * (1 - (b.khuyenMaiMax || 0) / 100));
+          return priceA - priceB;
+        });
         break;
       case 'price-desc':
-        result.sort((a, b) => b.gia - a.gia);
+        result.sort((a, b) => {
+          const priceA = Math.round(a.gia * (1 - (a.khuyenMaiMax || 0) / 100));
+          const priceB = Math.round(b.gia * (1 - (b.khuyenMaiMax || 0) / 100));
+          return priceB - priceA;
+        });
         break;
       case 'name-asc':
         result.sort((a, b) => a.name.localeCompare(b.name));
         break;
       case 'name-desc':
-        result.sort((a, b) => b.name.localeCompare(b.name));
+        result.sort((a, b) => b.name.localeCompare(a.name));
         break;
       default:
         break;
     }
-    setFilteredCombos(result);
+    setFilteredCombos(transformComboData(result));
   }, [originalCombos, searchQuery, sortOrder, priceRange]);
 
   const clearFilters = () => {
     setSearchQuery('');
     setSortOrder('featured');
     setPriceRange(null);
+    setShowFilters(false);
   };
 
-  const renderCombo = ({ item }: { item: Combo }) => (
+  const renderCombo = ({ item }: { item: SearchResult }) => (
     <TouchableOpacity
       style={styles.comboCard}
-      onPress={() => router.push(`/combos/${item.maCombo}`)}
+      onPress={() => router.push(`/combos/${item.id}`)}
     >
       <Image
-        source={{ uri: item.hinhAnh }}
+        source={{ uri: item.imageSrc }}
         style={styles.comboImage}
       />
       <View style={[styles.comboInfo, isDarkMode && styles.comboInfoDark]}>
         <Text style={[styles.comboName, isDarkMode && styles.textDark]}>
           {item.name}
         </Text>
-        <Text style={styles.comboPrice}>
-          {formatter.format(item.gia)}
-        </Text>
+        <View style={{ flexDirection: "column", alignItems: "flex-start", marginTop: 4 }}>
+          <Text style={[styles.comboPrice, { fontSize: 18, fontWeight: "bold", color: "#9F7AEA" }]}>
+            {formatter.format(item.price)}
+          </Text>
+
+          {item.discountPercent > 0 && item.originalPrice && (
+            <Text style={[styles.originalPrice, { textDecorationLine: "line-through", color: "#801d84ff", marginTop: 2 }, isDarkMode && styles.textDark]}>
+              {formatter.format(item.originalPrice)}
+            </Text>
+          )}
+        </View>
+
         <View style={styles.badgeContainer}>
-          {item.sanPhams.map((product) => (
-            <View key={product.idSanPham} style={styles.badge}>
-              <Tag size={12} color={isDarkMode ? '#A0AEC0' : '#718096'} />
-              <Text style={[styles.badgeText, isDarkMode && styles.textDark]}>
-                {product.name}
+          {item.savingsPercentageComparedToRetail && (
+            <View style={[styles.badge, { backgroundColor: '#BEE3F8' }]}>
+              <Text style={[styles.badgeText, { color: '#2A4365' }]}>
+                Đã giảm {item.savingsPercentageComparedToRetail}%
               </Text>
             </View>
-          ))}
+          )}
+          <View style={[styles.badge, { backgroundColor: '#E9D8FD' }]}>
+            <Tag size={12} color={isDarkMode ? '#A0AEC0' : '#718096'} />
+            <Text style={[styles.badgeText, isDarkMode && styles.textDark]}>
+              {item.productCount} sản phẩm
+            </Text>
+          </View>
         </View>
-        <Text style={[styles.comboDescription, isDarkMode && styles.textDark]}>
-          {item.moTa}
-        </Text>
       </View>
     </TouchableOpacity>
   );
@@ -251,6 +320,7 @@ export default function CombosScreen() {
           <TextInput
             style={[styles.searchInput, isDarkMode && styles.searchInputDark]}
             placeholder="Tìm kiếm combo..."
+            placeholderTextColor={isDarkMode ? '#A0AEC0' : '#718096'}
             value={searchQuery}
             onChangeText={setSearchQuery}
           />
@@ -264,7 +334,7 @@ export default function CombosScreen() {
 
         {showFilters && (
           <View style={styles.filterContainer}>
-            <Text style={[styles.textDark, isDarkMode && styles.textDark]}>Khoảng Giá</Text>
+            <Text style={[styles.title, isDarkMode && styles.textDark]}>Khoảng Giá</Text>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginVertical: 8 }}>
               {[
                 { label: 'Tất cả giá', value: 'all' },
@@ -298,12 +368,14 @@ export default function CombosScreen() {
                     }
                   }}
                 >
-                  <Text style={styles.filterButtonText}>{option.label}</Text>
+                  <Text style={[styles.filterButtonText, priceRange?.min === (option.value === 'all' ? null : option.value === 'under-100000' ? 0 : option.value === 'over-500000' ? 500000 : parseInt(option.value.split('-')[0])) && { color: '#fff' }]}>
+                    {option.label}
+                  </Text>
                 </TouchableOpacity>
               ))}
             </View>
 
-            <Text style={[styles.textDark, isDarkMode && styles.textDark]}>Sắp Xếp Theo</Text>
+            <Text style={[styles.title, isDarkMode && styles.textDark]}>Sắp Xếp Theo</Text>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginVertical: 8 }}>
               {[
                 { label: 'Nổi bật', value: 'featured' },
@@ -320,7 +392,9 @@ export default function CombosScreen() {
                   ]}
                   onPress={() => setSortOrder(option.value)}
                 >
-                  <Text style={styles.filterButtonText}>{option.label}</Text>
+                  <Text style={[styles.filterButtonText, sortOrder === option.value && { color: '#fff' }]}>
+                    {option.label}
+                  </Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -340,7 +414,7 @@ export default function CombosScreen() {
         <FlatList
           data={filteredCombos}
           renderItem={renderCombo}
-          keyExtractor={(item) => item.maCombo.toString()}
+          keyExtractor={(item) => item.id.toString()}
           numColumns={2}
           contentContainerStyle={styles.comboGrid}
         />
@@ -365,13 +439,13 @@ const styles = StyleSheet.create<Styles>({
   container: {
     flex: 1,
     backgroundColor: '#fff',
-    paddingTop: 48,
+    paddingTop: 4,
   },
   containerDark: {
     backgroundColor: '#1A202C',
   },
   header: {
-    padding: 24,
+    padding: 4,
   },
   tabContainer: {
     flexDirection: 'row',
@@ -396,10 +470,10 @@ const styles = StyleSheet.create<Styles>({
     color: '#9F7AEA',
   },
   title: {
-    fontSize: 24,
+    fontSize: 18,
     fontFamily: 'Poppins_600SemiBold',
     color: '#2D3748',
-    marginBottom: 16,
+    marginBottom: 8,
   },
   textDark: {
     color: '#fff',
@@ -478,8 +552,14 @@ const styles = StyleSheet.create<Styles>({
   comboPrice: {
     fontSize: 14,
     fontFamily: 'Poppins_600SemiBold',
-    color: '#9F7AEA',
-    marginTop: 4,
+    color: '#E53E3E',
+    marginRight: 8,
+  },
+  originalPrice: {
+    fontSize: 12,
+    fontFamily: 'Poppins_400Regular',
+    color: '#718096',
+    textDecorationLine: 'line-through',
   },
   comboDescription: {
     fontSize: 12,
@@ -498,8 +578,8 @@ const styles = StyleSheet.create<Styles>({
     alignItems: 'center',
     paddingVertical: 2,
     paddingHorizontal: 6,
-    backgroundColor: '#EDF2F7',
     borderRadius: 12,
+    backgroundColor: '#EDF2F7',
   },
   badgeText: {
     fontSize: 10,

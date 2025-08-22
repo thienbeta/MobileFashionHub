@@ -36,7 +36,7 @@ interface VersionGroup {
   items: ComboItem['sanPhamList'];
 }
 
-const API_BASE_URL = 'https://ce5e722365ab.ngrok-free.app/api';
+const API_BASE_URL = 'https://bicacuatho.azurewebsites.net/api';
 
 const CartSupportScreen = () => {
   const { id } = useLocalSearchParams();

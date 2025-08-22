@@ -40,7 +40,7 @@ export default function BlogsScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const API_BASE_URL = "http://192.168.1.93:5261";
+  const API_BASE_URL = "https://bicacuatho.azurewebsites.net";
 
   const debouncedSetSearchQuery = useCallback(
     debounce((query: string) => setSearchQuery(query), 300),

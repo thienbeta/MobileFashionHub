@@ -9,7 +9,7 @@ import * as FileSystem from "expo-file-system";
 import { apiFetch } from "../../../src/utils/api";
 import axios from "axios";
 
-const API_BASE_URL = "https://ce5e722365ab.ngrok-free.app/api";
+const API_BASE_URL = "https://bicacuatho.azurewebsites.net/api";
 
 interface NguoiDung {
   maNguoiDung: string;
@@ -57,6 +57,22 @@ interface Combo {
   gia: number;
   soLuong: number;
   rating: number;
+  khuyenMaiMax: number; // Added for promotions
+}
+
+interface SearchResult {
+  id: number;
+  name: string;
+  imageSrc: string;
+  price: number;
+  originalPrice: number | null;
+  discountPercent: number;
+  savings: number | null;
+  savingsPercentageComparedToRetail: number | null;
+  type: 'combo';
+  productCount: number;
+  moTa: string;
+  rating: number;
 }
 
 interface SizeQuantity {
@@ -64,6 +80,33 @@ interface SizeQuantity {
   quantity: number;
   price: number;
 }
+
+const transformComboData = (combo: Combo): SearchResult => {
+  const totalRetailPrice = combo.sanPhams.reduce(
+    (sum, p) => sum + (p.donGia * (p.soLuong || 1)),
+    0
+  );
+  const finalPrice = Math.round(combo.gia * (1 - (combo.khuyenMaiMax || 0) / 100));
+  const savings = totalRetailPrice - finalPrice;
+  const savingsPercentageComparedToRetail = Math.round(
+    ((totalRetailPrice - combo.gia) / totalRetailPrice) * 100
+  );
+
+  return {
+    id: combo.maCombo,
+    name: combo.name,
+    imageSrc: combo.hinhAnh,
+    price: finalPrice,
+    originalPrice: totalRetailPrice,
+    discountPercent: combo.khuyenMaiMax || 0,
+    savings,
+    savingsPercentageComparedToRetail,
+    type: 'combo',
+    productCount: combo.sanPhams.length,
+    moTa: combo.moTa,
+    rating: combo.rating,
+  };
+};
 
 export default function ComboDetail() {
   const { id } = useLocalSearchParams();
@@ -73,6 +116,7 @@ export default function ComboDetail() {
   const themeColors = isDarkMode ? colors.dark : colors.light;
 
   const [combo, setCombo] = useState<Combo | null>(null);
+  const [comboDisplay, setComboDisplay] = useState<SearchResult | null>(null);
   const [selections, setSelections] = useState<Record<string, { colorIndex: number | null; sizeIndex: number | null }>>({});
   const [sizeQuantities, setSizeQuantities] = useState<Record<string, SizeQuantity[]>>({});
   const [quantity, setQuantity] = useState(1);
@@ -85,6 +129,13 @@ export default function ComboDetail() {
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState("");
   const [rating, setRating] = useState(0);
+
+  const formatter = new Intl.NumberFormat('vi-VN', {
+    style: 'currency',
+    currency: 'VND',
+    currencyDisplay: 'code',
+    maximumFractionDigits: 0,
+  });
 
   useEffect(() => {
     const loadUserData = async () => {
@@ -139,7 +190,11 @@ export default function ComboDetail() {
           gia: comboResponse[0].gia,
           soLuong: comboResponse[0].soLuong,
           rating: 0,
+          khuyenMaiMax: comboResponse[0].khuyenMaiMax || 0, // Added for promotions
         };
+
+        const comboDisplayData = transformComboData(formattedCombo);
+        setComboDisplay(comboDisplayData);
 
         const initialSelections = formattedCombo.sanPhams.reduce((acc, product) => ({
           ...acc,
@@ -451,6 +506,7 @@ export default function ComboDetail() {
 
               if (combo) {
                 setCombo({ ...combo, rating: roundedAverageRating });
+                setComboDisplay(prev => prev ? { ...prev, rating: roundedAverageRating } : null);
               }
 
               return updatedComments;
@@ -477,7 +533,7 @@ export default function ComboDetail() {
     );
   }
 
-  if (error || !combo) {
+  if (error || !combo || !comboDisplay) {
     return (
       <View style={[styles.container, { backgroundColor: themeColors.background }]}>
         <Text style={[styles.errorText, { color: themeColors.textPrimary }]}>
@@ -486,8 +542,6 @@ export default function ComboDetail() {
       </View>
     );
   }
-
-  const selectedPrice = combo.gia;
 
   return (
     <ScrollView style={[styles.container, { backgroundColor: themeColors.background }]}>
@@ -512,14 +566,54 @@ export default function ComboDetail() {
         </View>
 
         <Image
-          source={{ uri: combo.hinhAnh || "https://via.placeholder.com/300" }}
+          source={{ uri: comboDisplay.imageSrc || "https://via.placeholder.com/300" }}
           style={styles.productImage}
         />
 
         <View style={styles.content}>
-          <Text style={[styles.name, { color: themeColors.textPrimary }]}>{combo.name}</Text>
-          <Text style={[styles.shortDescription, { color: themeColors.textTertiary }]}>{combo.moTa}</Text>
-          <Text style={[styles.price, { color: themeColors.iconPrimary }]}> {(selectedPrice / 1000).toFixed(3)} VND </Text>
+          <Text style={[styles.name, { color: themeColors.textPrimary }]}>{comboDisplay.name}</Text>
+          <View style={styles.ratingContainer}>
+            <View style={styles.ratingStars}>
+              {Array.from({ length: 5 }).map((_, index) => (
+                <Star
+                  key={index}
+                  size={16}
+                  color={index < Math.round(comboDisplay.rating) ? '#facc15' : '#d1d5db'}
+                  fill={index < Math.round(comboDisplay.rating) ? '#facc15' : 'none'}
+                />
+              ))}
+            </View>
+            <Text style={[styles.ratingText, { color: themeColors.textTertiary }]}>
+              {comboDisplay.rating.toFixed(1)} ({comments.length} đánh giá)
+            </Text>
+          </View>
+          <Text style={[styles.shortDescription, { color: themeColors.textTertiary }]}>{comboDisplay.moTa}</Text>
+          <View style={styles.priceContainer}>
+            <Text style={[styles.price, { color: '#9F7AEA' }]}>
+              {formatter.format(comboDisplay.price)}
+            </Text>
+            {comboDisplay.discountPercent > 0 && comboDisplay.originalPrice && (
+              <Text style={[styles.originalPrice, { color: themeColors.textTertiary }]}>
+                {formatter.format(comboDisplay.originalPrice)}
+              </Text>
+            )}
+          </View>
+          <View style={styles.badgeContainer}>
+            {comboDisplay.discountPercent > 0 && comboDisplay.savings && (
+              <View style={[styles.badge, { backgroundColor: '#C6F6D5' }]}>
+                <Text style={[styles.badgeText, { color: '#22543D' }]}>
+                  Tiết kiệm {formatter.format(comboDisplay.savings)}
+                </Text>
+              </View>
+            )}
+            {comboDisplay.savingsPercentageComparedToRetail && (
+              <View style={[styles.badge, { backgroundColor: '#BEE3F8' }]}>
+                <Text style={[styles.badgeText, { color: '#2A4365' }]}>
+                  Đã giảm {comboDisplay.savingsPercentageComparedToRetail}%
+                </Text>
+              </View>
+            )}
+          </View>
 
           {combo.sanPhams.map((product, index) => (
             <View key={index} style={styles.productSection}>
@@ -600,6 +694,7 @@ export default function ComboDetail() {
             <ShoppingBag size={20} color="#fff" />
             <Text style={styles.addToCartText}>Thêm vào giỏ hàng</Text>
           </TouchableOpacity>
+
           <Text style={[styles.sectionTitle, { color: themeColors.textPrimary, fontSize: 24 }]}>Đánh giá Combos</Text>
           <View style={styles.commentForm}>
             <View style={styles.ratingInput}>
@@ -664,7 +759,7 @@ export default function ComboDetail() {
                     {Array.from({ length: 5 }).map((_, index) => (
                       <Star
                         key={index}
-                        size={16}
+                        size= {16}
                         color={index < comment.danhGia ? '#facc15' : '#d1d5db'}
                         fill={index < comment.danhGia ? '#facc15' : 'none'}
                       />
@@ -695,7 +790,6 @@ const styles = StyleSheet.create({
     marginTop: 20,
     marginVertical: 20,
   },
-
   container: {
     flex: 1,
   },
@@ -704,7 +798,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     padding: 24,
-    paddingTop: 48,
+    paddingTop: 4,
   },
   backButton: {
     width: 40,
@@ -737,8 +831,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 8,
   },
+  ratingStars: {
+    flexDirection: 'row',
+    marginRight: 8,
+  },
   ratingText: {
-    marginLeft: 4,
     fontSize: 14,
     fontFamily: 'Poppins_400Regular',
   },
@@ -747,10 +844,37 @@ const styles = StyleSheet.create({
     fontFamily: "Poppins_400Regular",
     marginBottom: 16,
   },
+  priceContainer: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    marginBottom: 8,
+  },
   price: {
     fontSize: 24,
     fontFamily: "Poppins_700Bold",
-    marginBottom: 24,
+    marginRight: 8,
+  },
+  originalPrice: {
+    fontSize: 16,
+    fontFamily: "Poppins_400Regular",
+    textDecorationLine: 'line-through',
+  },
+  badgeContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 16,
+  },
+  badge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 12,
+  },
+  badgeText: {
+    fontSize: 12,
+    fontFamily: "Poppins_400Regular",
   },
   productSection: {
     marginBottom: 24,
@@ -822,14 +946,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: "Poppins_500Medium",
     marginHorizontal: 16,
-  },
-  addToCartButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 24,
   },
   addToCartText: {
     color: "#fff",
